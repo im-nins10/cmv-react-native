@@ -1,19 +1,39 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, Text, Image, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
 import { router } from 'expo-router';
 import Navbar from '../../components/Navbar';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 export default function LandingPage() {
-  
+  const [welcomeMessage, setWelcomeMessage] = useState('');
+
+  useEffect(() => {
+    const fetchUserData = async () => {
+      try {
+        const role = await AsyncStorage.getItem('role');
+        const fullName = await AsyncStorage.getItem('fullName');
+        if (role && fullName) {
+          setWelcomeMessage(`Welcome ${role} ${fullName}`);
+        } else {
+          setWelcomeMessage('Welcome');
+        }
+      } catch (error) {
+        setWelcomeMessage('Welcome');
+      }
+    };
+    fetchUserData();
+  }, []);
+
   return (
-      <ScrollView style={styles.container}>
-          <Navbar />
+    <ScrollView style={styles.container}>
+      <Navbar />
 
       {/* Header */}
       <View style={styles.header}>
         <Image source={require('../../assets/images/logo.png')} style={styles.logoLarge} />
         <View style={styles.titles}>
-          <Text style={styles.title1}>CITY POLICE STATION</Text>
+          <Text style={styles.welcomeText}>{welcomeMessage}</Text>
+          <Text style={styles.title1}>LIPA CITY POLICE STATION</Text>
           <Text style={styles.title2}>P.A.T.R.O.L. Plan 2030 Roadmap</Text>
           <Text style={styles.title3}>
             Peace and Order Agenda for Transformation and Upholding of the Rule-Of-Law
@@ -167,9 +187,9 @@ const styles = StyleSheet.create({
   },
   logoSmall: { height: 32, width: 32, resizeMode: 'contain' },
   logoLarge: { height: 80, width: 80, resizeMode: 'contain' },
-  titles: { flex: 1, alignItems: 'center', paddingHorizontal: 10 },
-  title1: { fontSize: 20, fontWeight: 'bold', color: 'darkblue' },
-  title2: { fontSize: 16, fontWeight: '600', color: 'darkblue' },
+  titles: { flex: 1, alignItems: 'center', paddingHorizontal: 10, textAlign: 'center' },
+  title1: { fontSize: 20, fontWeight: 'bold', color: 'darkblue', textAlign: 'center' },
+  title2: { fontSize: 16, fontWeight: '600', color: 'darkblue', textAlign: 'center' },
   title3: { fontSize: 12, textAlign: 'center', color: '#333' },
 
   sectionRow: {
@@ -261,5 +281,12 @@ const styles = StyleSheet.create({
     padding: 16,
     alignItems: 'center',
     marginTop: 30,
+  },
+  welcomeText: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: 'black',
+    textAlign: 'center',
+    marginBottom: 8,
   },
 });

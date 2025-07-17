@@ -1,7 +1,7 @@
 import databaseServices from './databaseServices';
 
 const databaseId = process.env.EXPO_PUBLIC_APPWRITE_DB_ID;
-const collectionId = process.env.EXPO_PUBLIC_APPWRITE_COLLECTION_ID;
+const collectionId = process.env.EXPO_PUBLIC_APPWRITE_USERS_COLLECTION_ID;
 
 const userService = {
   async getUsers() {
@@ -35,6 +35,19 @@ const userService = {
     }
     return { success: true };
   },
+
+  async getUserByUsername(username) {
+    const response = await databaseServices.listDocuments(databaseId, collectionId);
+    if (response.error) {
+      return { error: response.error };
+    }
+    const user = response.find(u => u.username === username);
+    if (!user) {
+      return { error: 'User not found' };
+    }
+    return { data: user };
+  },
+
 };
 
-export default userService;
+export default userService; 

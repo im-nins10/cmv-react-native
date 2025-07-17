@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -8,45 +8,79 @@ import {
   ScrollView,
   Modal,
   TextInput,
+  ActivityIndicator,
 } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
-import * as ImagePicker from 'expo-image-picker';
 import { Picker } from '@react-native-picker/picker';
-import Navbar from '../../components/Navbar'; // adjust the path if needed
+import Navbar from '../../components/Navbar';
+import userService from '../../services/usersService';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+
+const getLoggedInUsername = async () => {
+  try {
+    const username = await AsyncStorage.getItem('username');
+    return username;
+  } catch (e) {
+    return null;
+  }
+};
 
 export default function ViewProfileScreen() {
-  const [user, setUser] = useState({
-    name: 'Jane Doe',
-    role: 'Admin',
-    email: 'jane.doe@example.com',
-    username: 'janedoe123',
-    status: 'Active',
-    profilePicture: 'https://i.pravatar.cc/150?img=12',
-  });
-
+  const [user, setUser] = useState(null);
   const [modalVisible, setModalVisible] = useState(false);
-  const [editForm, setEditForm] = useState({ ...user });
+  const [editForm, setEditForm] = useState({});
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
 
-  const handlePickImage = async () => {
-    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!permission.granted) return;
+  useEffect(() => {
+    const fetchUser = async () => {
+      setLoading(true);
+      setError('');
+      const username = await getLoggedInUsername();
+      const res = await userService.getUserByUsername(username);
+      if (res && res.data) {
+        setUser(res.data);
+        setEditForm(res.data);
+      } else {
+        setError(res?.error || 'User not found');
+      }
+      setLoading(false);
+    };
+    fetchUser();
+  }, []);
 
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      allowsEditing: true,
-      aspect: [1, 1],
-      quality: 1,
-    });
-
-    if (!result.canceled && result.assets.length > 0) {
-      setEditForm({ ...editForm, profilePicture: result.assets[0].uri });
+  const handleUpdateProfile = async () => {
+    setSaving(true);
+    setError('');
+    // Remove system fields before updating
+    const { $id, $databaseId, $collectionId, $createdAt, $updatedAt, ...dataToUpdate } = editForm;
+    const res = await userService.updateUser(user.$id, dataToUpdate);
+    if (!res.error) {
+      setUser(res.data);
+      setModalVisible(false);
+    } else {
+      setError(res.error || 'Failed to update profile');
     }
+    setSaving(false);
   };
 
-  const handleUpdateProfile = () => {
-    setUser(editForm);
-    setModalVisible(false);
-  };
+  if (loading) {
+    return (
+      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+        <ActivityIndicator size="large" color="#002D72" />
+      </View>
+    );
+  }
+
+  if (error) {
+    return (
+      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+        <Text style={{ color: 'red' }}>{error}</Text>
+      </View>
+    );
+  }
 
   return (
     <ScrollView style={styles.container}>
@@ -56,11 +90,7 @@ export default function ViewProfileScreen() {
         <Text style={styles.sectionTitle}>User Profile</Text>
 
         <View style={styles.card}>
-          <Image
-            source={{ uri: user.profilePicture }}
-            style={styles.profileImage}
-          />
-
+         
           <View style={styles.infoContainer}>
             <Text style={styles.label}>Full Name</Text>
             <Text style={styles.value}>{user.name}</Text>
@@ -106,12 +136,14 @@ export default function ViewProfileScreen() {
           <View style={styles.modalContent}>
             <Text style={styles.modalTitle}>Edit Profile</Text>
 
+            <Text style={{ fontWeight: 'bold', marginTop: 10 }}>Full Name</Text>
             <TextInput
               style={styles.input}
               placeholder="Full Name"
               value={editForm.name}
               onChangeText={(text) => setEditForm({ ...editForm, name: text })}
             />
+            <Text style={{ fontWeight: 'bold', marginTop: 10 }}>Email</Text>
             <TextInput
               style={styles.input}
               placeholder="Email"
@@ -120,7 +152,8 @@ export default function ViewProfileScreen() {
               keyboardType="email-address"
             />
 
-            <View style={styles.pickerWrapper}>
+            {/* Removed role picker to prevent updating role */}
+            {/* <View style={styles.pickerWrapper}>
               <Picker
                 selectedValue={editForm.role}
                 onValueChange={(value) => setEditForm({ ...editForm, role: value })}
@@ -128,18 +161,39 @@ export default function ViewProfileScreen() {
                 <Picker.Item label="Admin" value="Admin" />
                 <Picker.Item label="Invest Team" value="Invest Team" />
               </Picker>
+            </View> */}
+
+            {/* Add password field */}
+            <Text style={{ fontWeight: 'bold', marginTop: 10 }}>Password</Text>
+            <View style={{ position: 'relative' }}>
+              <TextInput
+                style={styles.input}
+                placeholder="New Password"
+                value={editForm.password || ''}
+                onChangeText={(text) => setEditForm({ ...editForm, password: text })}
+                secureTextEntry={!showPassword}
+              />
+              <TouchableOpacity
+                style={{
+                  position: 'absolute',
+                  right: 16,
+                  top: 18,
+                  zIndex: 1,
+                }}
+                onPress={() => setShowPassword(!showPassword)}
+              >
+                <MaterialIcons
+                  name={showPassword ? 'visibility' : 'visibility-off'}
+                  size={22}
+                  color="#999"
+                />
+              </TouchableOpacity>
             </View>
+            
+            {error ? <Text style={{ color: 'red', marginTop: 8 }}>{error}</Text> : null}
 
-            <TouchableOpacity style={styles.imagePicker} onPress={handlePickImage}>
-              <Text style={styles.imagePickerText}>Change Picture</Text>
-            </TouchableOpacity>
-
-            {editForm.profilePicture && (
-              <Image source={{ uri: editForm.profilePicture }} style={styles.previewImage} />
-            )}
-
-            <TouchableOpacity style={styles.saveButton} onPress={handleUpdateProfile}>
-              <Text style={styles.saveButtonText}>Save</Text>
+            <TouchableOpacity style={styles.saveButton} onPress={handleUpdateProfile} disabled={saving}>
+              <Text style={styles.saveButtonText}>{saving ? 'Saving...' : 'Save'}</Text>
             </TouchableOpacity>
 
             <TouchableOpacity onPress={() => setModalVisible(false)} style={styles.cancelButton}>
@@ -153,7 +207,7 @@ export default function ViewProfileScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#f5f5f5' },
+  container: { flex: 1, backgroundColor: '#eaf0f6' },
   profileContainer: { padding: 16 },
   sectionTitle: { fontSize: 20, fontWeight: 'bold', color: '#002D72', marginBottom: 12 },
   card: {
@@ -245,21 +299,6 @@ const styles = StyleSheet.create({
     borderRadius: 6,
     marginVertical: 6,
     overflow: 'hidden',
-  },
-  imagePicker: {
-    backgroundColor: '#ccc',
-    padding: 10,
-    borderRadius: 4,
-    marginTop: 10,
-    alignItems: 'center',
-  },
-  imagePickerText: { fontWeight: 'bold' },
-  previewImage: {
-    height: 60,
-    width: 60,
-    borderRadius: 30,
-    marginTop: 10,
-    alignSelf: 'center',
   },
   saveButton: {
     backgroundColor: '#28a745',

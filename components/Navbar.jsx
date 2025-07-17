@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -7,8 +7,10 @@ import {
   StyleSheet,
   Image,
   Dimensions,
+  Alert,
   Modal,
 } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 
@@ -19,22 +21,41 @@ export default function Navbar() {
   const isMobile = screenWidth < 768;
 
   const [drawerVisible, setDrawerVisible] = useState(false);
-  const [logoutModalVisible, setLogoutModalVisible] = useState(false);
+  const [role, setRole] = useState('');
+
+  useEffect(() => {
+    const fetchRole = async () => {
+      try {
+        const storedRole = await AsyncStorage.getItem('role');
+        if (storedRole) {
+          setRole(storedRole);
+        }
+      } catch (error) {
+        console.error('Failed to fetch role from AsyncStorage', error);
+      }
+    };
+    fetchRole();
+  }, []);
 
   const navLinks = [
     { label: 'Home', icon: 'home', route: '/landing' },
-    { label: 'Crime Mapping', icon: 'map' },
-    { label: 'Dashboard', icon: 'bar-chart' },
+    { label: 'Crime Mapping', icon: 'map', route: '/mapping' },
+    { label: 'Dashboard', icon: 'bar-chart', route: '/dashboard' },
     { label: 'Population', icon: 'group', route: '/population' },
-    { label: 'Audit Logs', icon: 'history' },
+    { label: 'Audit Logs', icon: 'history', route: '/audit_logs' },
     { label: 'Profile', icon: 'person', route: '/profile' },
     { label: 'Create Account', icon: 'person-add', route: '/create_account' },
-    { label: 'Logout', icon: 'logout', route: 'logout' }, // handled separately
+    { label: 'Logout', icon: 'logout', route: 'logout' },
   ];
+
+  const filteredNavLinks =
+    role === 'invest'
+      ? navLinks.filter(link => link.label !== 'Audit Logs' && link.label !== 'Create Account')
+      : navLinks;
 
   const handleNavigate = (route) => {
     if (route === 'logout') {
-      setLogoutModalVisible(true);
+      handleLogout();
     } else if (route) {
       router.push(route);
       setDrawerVisible(false);
@@ -42,14 +63,27 @@ export default function Navbar() {
   };
 
   const handleLogout = () => {
-    setLogoutModalVisible(false);
-    router.replace('/'); // assuming app/index.jsx is your initial route
+    Alert.alert(
+      'Confirm Logout',
+      'Are you sure you want to logout?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Logout',
+          style: 'destructive',
+          onPress: () => {
+            router.replace('/');
+          },
+        },
+      ],
+      { cancelable: true }
+    );
   };
 
   return (
     <View>
       {/* Top Navbar */}
-      <View style={styles.navbar}>
+      <View style={[styles.navbar, role === 'invest' && styles.navbarInvest]}>
         <View style={styles.navbarLeft}>
           <Image source={require('../assets/images/logo1.png')} style={styles.logoSmall} />
           <Text style={styles.navbarBrand}>CrimeMapping</Text>
@@ -61,7 +95,7 @@ export default function Navbar() {
           </TouchableOpacity>
         ) : (
           <View style={styles.navLinksRight}>
-            {navLinks.map((link, index) => (
+            {filteredNavLinks.map((link, index) => (
               <TouchableOpacity
                 key={index}
                 style={styles.navLinkContainer}
@@ -86,7 +120,7 @@ export default function Navbar() {
                 <MaterialIcons name="close" size={24} color="black" />
               </TouchableOpacity>
             </View>
-            {navLinks.map((link, index) => (
+            {filteredNavLinks.map((link, index) => (
               <TouchableOpacity
                 key={index}
                 style={styles.drawerLink}
@@ -96,27 +130,6 @@ export default function Navbar() {
                 <Text style={styles.drawerLinkText}>{link.label}</Text>
               </TouchableOpacity>
             ))}
-          </View>
-        </View>
-      </Modal>
-
-      {/* Logout Confirmation Modal */}
-      <Modal visible={logoutModalVisible} transparent animationType="fade">
-        <View style={styles.confirmModalOverlay}>
-          <View style={styles.confirmModal}>
-            <Text style={styles.confirmTitle}>Confirm Logout</Text>
-            <Text style={styles.confirmText}>Are you sure you want to logout?</Text>
-            <View style={styles.confirmActions}>
-              <TouchableOpacity onPress={handleLogout} style={styles.confirmButton}>
-                <Text style={styles.confirmButtonText}>Logout</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                onPress={() => setLogoutModalVisible(false)}
-                style={styles.cancelButton}
-              >
-                <Text style={styles.cancelButtonText}>Cancel</Text>
-              </TouchableOpacity>
-            </View>
           </View>
         </View>
       </Modal>
@@ -131,6 +144,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+  },
+  navbarInvest: {
+    backgroundColor: '#003153',
   },
   navbarLeft: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   logoSmall: { height: 32, width: 32, resizeMode: 'contain' },
@@ -169,55 +185,4 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   drawerLinkText: { fontSize: 16, color: '#002D72', fontWeight: '500' },
-
-  // Logout Confirmation Modal
-  confirmModalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.4)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  confirmModal: {
-    backgroundColor: 'white',
-    width: 300,
-    borderRadius: 8,
-    padding: 20,
-    alignItems: 'center',
-  },
-  confirmTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#002D72',
-    marginBottom: 10,
-  },
-  confirmText: {
-    fontSize: 14,
-    color: '#333',
-    textAlign: 'center',
-    marginBottom: 20,
-  },
-  confirmActions: {
-    flexDirection: 'row',
-    gap: 12,
-  },
-  confirmButton: {
-    backgroundColor: '#dc3545',
-    paddingVertical: 10,
-    paddingHorizontal: 20,
-    borderRadius: 4,
-  },
-  confirmButtonText: {
-    color: 'white',
-    fontWeight: 'bold',
-  },
-  cancelButton: {
-    backgroundColor: '#ccc',
-    paddingVertical: 10,
-    paddingHorizontal: 20,
-    borderRadius: 4,
-  },
-  cancelButtonText: {
-    fontWeight: 'bold',
-    color: '#333',
-  },
 });

@@ -9,10 +9,12 @@ import {
   Alert,
   Dimensions,
   ScrollView,
+  Modal,
 } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import authService from '../services/authService';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const { width, height } = Dimensions.get('window');
 const isTablet = width > 768;
@@ -26,6 +28,10 @@ export default function LoginScreen() {
   const [rememberMe, setRememberMe] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
 
+  // New state for forgot password modal visibility and email input
+  const [forgotPasswordVisible, setForgotPasswordVisible] = useState(false);
+  const [forgotEmail, setForgotEmail] = useState('');
+
   const useHorizontalLayout = isTablet || (isLandscape && width > 600);
 
   const handleLogin = async () => {
@@ -33,8 +39,24 @@ export default function LoginScreen() {
     if (response.error) {
       Alert.alert('Login Failed', response.error);
     } else {
+      // Save username, role, and full name to AsyncStorage
+      await AsyncStorage.setItem('username', username);
+      await AsyncStorage.setItem('role', response.user.role || '');
+      await AsyncStorage.setItem('fullName', response.user.name || '');
       router.push('/landing');
     }
+  };
+
+  // Handler for sending forgot password email (placeholder)
+  const handleSendForgotPassword = () => {
+    if (!forgotEmail) {
+      Alert.alert('Error', 'Please enter your email address.');
+      return;
+    }
+    // Placeholder: Implement actual forgot password logic here
+    Alert.alert('Password Reset', `Password reset link sent to ${forgotEmail}`);
+    setForgotPasswordVisible(false);
+    setForgotEmail('');
   };
 
   return (
@@ -89,7 +111,7 @@ export default function LoginScreen() {
                 </View>
                 <Text style={styles.rememberText}>Remember Me</Text>
               </TouchableOpacity>
-              <TouchableOpacity>
+              <TouchableOpacity onPress={() => setForgotPasswordVisible(true)}>
                 <Text style={styles.forgotText}>Forgot Password?</Text>
               </TouchableOpacity>
             </View>
@@ -109,6 +131,42 @@ export default function LoginScreen() {
           />
         </View>
       </View>
+
+      {/* Forgot Password Modal */}
+      <Modal
+        animationType="slide"
+        transparent={true}
+        visible={forgotPasswordVisible}
+        onRequestClose={() => setForgotPasswordVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContainer}>
+            <Text style={styles.modalTitle}>Forgot Password</Text>
+            <TextInput
+              style={styles.modalInput}
+              placeholder="Enter your email"
+              value={forgotEmail}
+              onChangeText={setForgotEmail}
+              keyboardType="email-address"
+              autoCapitalize="none"
+            />
+            <View style={styles.modalButtons}>
+              <TouchableOpacity style={[styles.btn, styles.modalBtn]} onPress={handleSendForgotPassword}>
+                <Text style={styles.btnText}>Send</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.btn, styles.modalBtn, styles.cancelBtn]}
+                onPress={() => {
+                  setForgotPasswordVisible(false);
+                  setForgotEmail('');
+                }}
+              >
+                <Text style={styles.btnText}>Cancel</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </ScrollView>
   );
 }
@@ -194,4 +252,44 @@ const styles = StyleSheet.create({
   logo: { maxWidth: '80%', maxHeight: '80%' },
   logoHorizontal: { width: 300, height: 300 },
   logoVertical: { width: 200, height: 200 },
+
+  // Modal styles
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalContainer: {
+    width: '85%',
+    backgroundColor: 'white',
+    borderRadius: 10,
+    padding: 20,
+    elevation: 10,
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    marginBottom: 15,
+    textAlign: 'center',
+  },
+  modalInput: {
+    borderWidth: 1,
+    borderColor: '#ccc',
+    borderRadius: 8,
+    padding: 12,
+    fontSize: 16,
+    marginBottom: 20,
+  },
+  modalButtons: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  modalBtn: {
+    flex: 1,
+    marginHorizontal: 5,
+  },
+  cancelBtn: {
+    backgroundColor: '#999',
+  },
 });

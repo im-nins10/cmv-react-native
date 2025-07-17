@@ -1,11 +1,75 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, TextInput, TouchableOpacity, ScrollView, Alert, Modal, Image, ActivityIndicator, StyleSheet, Dimensions, Switch } from 'react-native';
-import { Picker } from '@react-native-picker/picker';
-import * as ImagePicker from 'expo-image-picker';
+import { View, Text, TextInput, TouchableOpacity, ScrollView, Alert, Modal, ActivityIndicator, StyleSheet, Dimensions, Switch } from 'react-native';
 import userService from '../../services/usersService';
 import Navbar from '../../components/Navbar';
 
 const { width: screenWidth } = Dimensions.get('window');
+
+// Custom Dropdown Component
+const CustomDropdown = ({ 
+  selectedValue, 
+  onValueChange, 
+  items, 
+  placeholder = "Select an option", 
+  style,
+  disabled = false 
+}) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const [selectedLabel, setSelectedLabel] = useState('');
+
+  useEffect(() => {
+    const selected = items.find(item => item.value === selectedValue);
+    setSelectedLabel(selected ? selected.label : placeholder);
+  }, [selectedValue, items, placeholder]);
+
+  const handleSelect = (value, label) => {
+    onValueChange(value);
+    setSelectedLabel(label);
+    setIsOpen(false);
+  };
+
+  return (
+    <View style={[styles.dropdownContainer, style]}>
+      <TouchableOpacity
+        style={[styles.dropdownButton, disabled && styles.dropdownDisabled]}
+        onPress={() => !disabled && setIsOpen(!isOpen)}
+        disabled={disabled}
+      >
+        <Text style={[
+          styles.dropdownButtonText,
+          selectedValue === '' && styles.dropdownPlaceholder
+        ]}>
+          {selectedLabel}
+        </Text>
+        <Text style={styles.dropdownArrow}>
+          {isOpen ? '▲' : '▼'}
+        </Text>
+      </TouchableOpacity>
+      
+      {isOpen && (
+        <View style={styles.dropdownList}>
+          {items.map((item, index) => (
+            <TouchableOpacity
+              key={index}
+              style={[
+                styles.dropdownItem,
+                selectedValue === item.value && styles.dropdownItemSelected
+              ]}
+              onPress={() => handleSelect(item.value, item.label)}
+            >
+              <Text style={[
+                styles.dropdownItemText,
+                selectedValue === item.value && styles.dropdownItemTextSelected
+              ]}>
+                {item.label}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+      )}
+    </View>
+  );
+};
 
 export default function CreateAccountScreen() {
   const [form, setForm] = useState({
@@ -15,7 +79,6 @@ export default function CreateAccountScreen() {
     username: '',
     password: '',
     confirmPassword: '',
-    profilePicture: null,
   });
 
   const [loading, setLoading] = useState(false);
@@ -43,6 +106,13 @@ export default function CreateAccountScreen() {
   // Search functionality
   const [searchQuery, setSearchQuery] = useState('');
   const [filteredUsers, setFilteredUsers] = useState([]);
+
+  // Role options for dropdown
+  const roleOptions = [
+    { label: 'Select Role', value: '' },
+    { label: 'Admin', value: 'admin' },
+    { label: 'Invest', value: 'invest' }
+  ];
 
   useEffect(() => {
     fetchUsers();
@@ -75,7 +145,7 @@ export default function CreateAccountScreen() {
       setError(response.error);
     } else {
       setUsers(response.data);
-      setFilteredUsers(response.data); // Initialize filtered users
+      setFilteredUsers(response.data);
     }
   };
 
@@ -155,23 +225,6 @@ export default function CreateAccountScreen() {
     return () => clearTimeout(timeoutId);
   }, [editForm.username, users, editIndex]);
 
-  const handlePickImage = async (isEdit = false) => {
-    let result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      allowsEditing: true,
-      aspect: [1, 1],
-      quality: 0.5,
-      base64: true,
-    });
-    if (!result.cancelled) {
-      if (isEdit) {
-        setEditForm({ ...editForm, profilePicture: result.assets[0].base64 });
-      } else {
-        setForm({ ...form, profilePicture: result.assets[0].base64 });
-      }
-    }
-  };
-
   const isValidEmail = (email) => /\S+@\S+\.\S+/.test(email);
 
   // Add user with enhanced validation
@@ -200,10 +253,7 @@ export default function CreateAccountScreen() {
       Alert.alert('Validation', 'Passwords do not match.');
       return;
     }
-    if (form.profilePicture && form.profilePicture.length > 65536) {
-      Alert.alert('Image too large', 'Please select a smaller image.');
-      return;
-    }
+
     setLoading(true);
     const response = await userService.addUser({
       name: form.name,
@@ -211,7 +261,6 @@ export default function CreateAccountScreen() {
       email: form.email,
       username: form.username,
       password: form.password,
-      profile_picture: form.profilePicture,
       status: 'Active',
     });
     setLoading(false);
@@ -220,7 +269,7 @@ export default function CreateAccountScreen() {
       return;
     }
     fetchUsers();
-    setForm({ name: '', role: '', email: '', username: '', password: '', confirmPassword: '', profilePicture: null });
+    setForm({ name: '', role: '', email: '', username: '', password: '', confirmPassword: '' });
     setUsernameValidation({ isChecking: false, isValid: null, message: '' });
   };
 
@@ -228,7 +277,6 @@ export default function CreateAccountScreen() {
     setEditIndex(index);
     setEditForm({
       ...users[index],
-      profilePicture: users[index].profile_picture || null,
     });
     setModalVisible(true);
     // Reset edit username validation
@@ -255,17 +303,12 @@ export default function CreateAccountScreen() {
       }
     }
 
-    if (editForm.profilePicture && editForm.profilePicture.length > 65536) {
-      Alert.alert('Image too large', 'Please select a smaller image.');
-      return;
-    }
     setLoading(true);
     const response = await userService.updateUser(editForm.$id, {
       name: editForm.name,
       role: editForm.role,
       email: editForm.email,
       username: editForm.username,
-      profile_picture: editForm.profilePicture,
       status: editForm.status,
     });
     setLoading(false);
@@ -387,17 +430,15 @@ export default function CreateAccountScreen() {
             value={form.name}
             onChangeText={text => setForm({ ...form, name: text })}
           />
-          <View style={styles.pickerWrapper}>
-            <Picker
-              selectedValue={form.role}
-              style={styles.picker}
-              onValueChange={itemValue => setForm({ ...form, role: itemValue })}
-            >
-              <Picker.Item label="Select Role" value="" />
-              <Picker.Item label="Admin" value="admin" />
-              <Picker.Item label="Invest" value="invest" />
-            </Picker>
-          </View>
+          
+          <CustomDropdown
+            selectedValue={form.role}
+            onValueChange={value => setForm({ ...form, role: value })}
+            items={roleOptions}
+            placeholder="Select Role"
+            style={styles.dropdownMargin}
+          />
+          
           <TextInput
             style={styles.input}
             placeholder="Email"
@@ -451,15 +492,6 @@ export default function CreateAccountScreen() {
               <Text>{confirmVisible ? 'Hide' : 'Show'}</Text>
             </TouchableOpacity>
           </View>
-          <TouchableOpacity style={styles.imagePicker} onPress={() => handlePickImage(false)}>
-            <Text style={styles.imagePickerText}>Pick Profile Picture</Text>
-          </TouchableOpacity>
-          {form.profilePicture ? (
-            <Image
-              source={{ uri: `data:image/png;base64,${form.profilePicture}` }}
-              style={styles.previewImage}
-            />
-          ) : null}
           <TouchableOpacity style={styles.submitButton} onPress={handleCreateAccount} disabled={loading}>
             {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.submitButtonText}>Create Account</Text>}
           </TouchableOpacity>
@@ -501,68 +533,59 @@ export default function CreateAccountScreen() {
       <Modal visible={modalVisible} transparent animationType="slide">
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
-            <Text style={styles.sectionTitle}>Edit User</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="Name"
-              value={editForm.name || ''}
-              onChangeText={text => setEditForm({ ...editForm, name: text })}
-            />
-            <View style={styles.pickerWrapper}>
-              <Picker
-                selectedValue={editForm.role || ''}
-                style={styles.picker}
-                onValueChange={itemValue => setEditForm({ ...editForm, role: itemValue })}
-              >
-                <Picker.Item label="Select Role" value="" />
-                <Picker.Item label="Admin" value="admin" />
-                <Picker.Item label="Invest" value="invest" />
-              </Picker>
-            </View>
-            <TextInput
-              style={styles.input}
-              placeholder="Email"
-              value={editForm.email || ''}
-              onChangeText={text => setEditForm({ ...editForm, email: text })}
-              keyboardType="email-address"
-              autoCapitalize="none"
-            />
-            <View>
+            <ScrollView>
+              <Text style={styles.sectionTitle}>Edit User</Text>
               <TextInput
-                style={[
-                  styles.input,
-                  { 
-                    borderColor: editUsernameValidation.isValid === false ? '#dc3545' : 
-                                editUsernameValidation.isValid === true ? '#28a745' : '#ccc'
-                  }
-                ]}
-                placeholder="Username"
-                value={editForm.username || ''}
-                onChangeText={text => {
-                  setEditForm({ ...editForm, username: text });
-                  if (!text) {
-                    setEditUsernameValidation({ isChecking: false, isValid: null, message: '' });
-                  }
-                }}
+                style={styles.input}
+                placeholder="Name"
+                value={editForm.name || ''}
+                onChangeText={text => setEditForm({ ...editForm, name: text })}
+              />
+              
+              <CustomDropdown
+                selectedValue={editForm.role || ''}
+                onValueChange={value => setEditForm({ ...editForm, role: value })}
+                items={roleOptions}
+                placeholder="Select Role"
+                style={styles.dropdownMargin}
+              />
+              
+              <TextInput
+                style={styles.input}
+                placeholder="Email"
+                value={editForm.email || ''}
+                onChangeText={text => setEditForm({ ...editForm, email: text })}
+                keyboardType="email-address"
                 autoCapitalize="none"
               />
-              <UsernameValidationIndicator validation={editUsernameValidation} />
-            </View>
-            <TouchableOpacity style={styles.imagePicker} onPress={() => handlePickImage(true)}>
-              <Text style={styles.imagePickerText}>Pick Profile Picture</Text>
-            </TouchableOpacity>
-            {editForm.profilePicture ? (
-              <Image
-                source={{ uri: `data:image/png;base64,${editForm.profilePicture}` }}
-                style={styles.previewImage}
-              />
-            ) : null}
-            <TouchableOpacity style={styles.submitButton} onPress={handleUpdateUser} disabled={loading}>
-              {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.submitButtonText}>Update User</Text>}
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.cancelButton} onPress={() => setModalVisible(false)}>
-              <Text style={styles.cancelButtonText}>Cancel</Text>
-            </TouchableOpacity>
+              <View>
+                <TextInput
+                  style={[
+                    styles.input,
+                    { 
+                      borderColor: editUsernameValidation.isValid === false ? '#dc3545' : 
+                                  editUsernameValidation.isValid === true ? '#28a745' : '#ccc'
+                    }
+                  ]}
+                  placeholder="Username"
+                  value={editForm.username || ''}
+                  onChangeText={text => {
+                    setEditForm({ ...editForm, username: text });
+                    if (!text) {
+                      setEditUsernameValidation({ isChecking: false, isValid: null, message: '' });
+                    }
+                  }}
+                  autoCapitalize="none"
+                />
+                <UsernameValidationIndicator validation={editUsernameValidation} />
+              </View>
+              <TouchableOpacity style={styles.submitButton} onPress={handleUpdateUser} disabled={loading}>
+                {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.submitButtonText}>Update User</Text>}
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.cancelButton} onPress={() => setModalVisible(false)}>
+                <Text style={styles.cancelButtonText}>Cancel</Text>
+              </TouchableOpacity>
+            </ScrollView>
           </View>
         </View>
       </Modal>
@@ -571,17 +594,12 @@ export default function CreateAccountScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#f5f5f5' },
+  container: { flex: 1, backgroundColor: '#eaf0f6' },
   sectionTitle: { fontSize: 18, fontWeight: 'bold', margin: 10, color: '#002D72' },
   form: { padding: 16, backgroundColor: '#fff', marginBottom: 10 },
   input: { borderWidth: 1, borderColor: '#ccc', marginVertical: 6, padding: 10, borderRadius: 4 },
-  pickerWrapper: { borderWidth: 1, borderColor: '#ccc', borderRadius: 4, marginVertical: 6, overflow: 'hidden' },
-  picker: { height: 50, width: '100%' },
   passwordContainer: { flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: '#ccc', borderRadius: 4, paddingHorizontal: 10, marginVertical: 6 },
   passwordInput: { flex: 1, paddingVertical: 10 },
-  imagePicker: { backgroundColor: '#ccc', padding: 10, borderRadius: 4, marginTop: 10, alignItems: 'center' },
-  imagePickerText: { fontWeight: 'bold' },
-  previewImage: { height: 80, width: 80, borderRadius: 40, marginTop: 10, alignSelf: 'center' },
   submitButton: { backgroundColor: '#0056b3', padding: 12, borderRadius: 4, marginTop: 16 },
   submitButtonText: { color: 'white', fontWeight: 'bold', textAlign: 'center' },
   usersSection: { padding: 16, backgroundColor: '#fff' },
@@ -658,5 +676,79 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#6c757d',
     fontStyle: 'italic',
+  },
+  // Custom Dropdown Styles
+  dropdownContainer: {
+    position: 'relative',
+    zIndex: 1000,
+  },
+  dropdownMargin: {
+    marginVertical: 6,
+  },
+  dropdownButton: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#ccc',
+    borderRadius: 4,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    backgroundColor: '#fff',
+    minHeight: 48,
+  },
+  dropdownDisabled: {
+    backgroundColor: '#f5f5f5',
+    opacity: 0.7,
+  },
+  dropdownButtonText: {
+    fontSize: 16,
+    color: '#333',
+    flex: 1,
+  },
+  dropdownPlaceholder: {
+    color: '#999',
+  },
+  dropdownArrow: {
+    fontSize: 12,
+    color: '#666',
+    marginLeft: 10,
+  },
+  dropdownList: {
+    position: 'absolute',
+    top: '100%',
+    left: 0,
+    right: 0,
+    backgroundColor: '#fff',
+    borderWidth: 1,
+    borderColor: '#ccc',
+    borderTopWidth: 0,
+    borderRadius: 4,
+    borderTopLeftRadius: 0,
+    borderTopRightRadius: 0,
+    maxHeight: 200,
+    zIndex: 1001,
+    elevation: 5,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
+  },
+  dropdownItem: {
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#eee',
+  },
+  dropdownItemSelected: {
+    backgroundColor: '#f0f8ff',
+  },
+  dropdownItemText: {
+    fontSize: 16,
+    color: '#333',
+  },
+  dropdownItemTextSelected: {
+    color: '#007bff',
+    fontWeight: '600', 
   },
 });

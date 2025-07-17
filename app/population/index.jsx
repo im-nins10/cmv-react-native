@@ -1,150 +1,86 @@
-import React, { useState } from 'react';
-import {
-  View,
-  Text,
-  TouchableOpacity,
-  StyleSheet,
-  FlatList,
-  TextInput,
-  ScrollView,
-  Image,
-  Modal,
-  Alert,
-} from 'react-native';
+import React, { useState, useEffect, useMemo } from 'react';
+import { View, Text, TouchableOpacity, TextInput, FlatList, Modal, Alert, StyleSheet, ScrollView } from 'react-native';
 import { useRouter } from 'expo-router';
+import databaseServices from '../../services/databaseServices';
 import Navbar from '../../components/Navbar';
-
-const barangaysByDistrict = {
-  West: [
-    { name: 'Bagong Pook', population: 2098 },
-    { name: 'Banay-Banay', population: 4000 },
-    { name: 'Bulaklakan', population: 3200 },
-    { name: 'Duhatan', population: 3200 },
-    { name: 'Fernando', population: 3200 },
-    { name: 'Halang', population: 3200 },
-    { name: 'Mataas Na Lupa', population: 3200 },
-    { name: 'Pangao', population: 3200 },
-    { name: 'Pinagtongulan', population: 3200 },
-    { name: 'San Carlos', population: 3200 },
-    { name: 'San Salvador', population: 3200 },
-    { name: 'Sico', population: 3200 },
-    { name: 'Tambo', population: 3200 },
-    { name: 'Tangway', population: 3200 },
-    { name: 'Tibig', population: 3200 },
-  ],
-  Urban: [
-    { name: 'Barangay 1', population: 2800 },
-    { name: 'Barangay 2', population: 3200 },
-    { name: 'Barangay 3', population: 3200 },
-    { name: 'Barangay 4', population: 3200 },
-    { name: 'Barangay 5', population: 3200 },
-    { name: 'Barangay 6', population: 3200 },
-    { name: 'Barangay 7', population: 3200 },
-    { name: 'Barangay 8', population: 3200 },
-    { name: 'Barangay 9', population: 3200 },
-    { name: 'Barangay 10', population: 3200 },
-    { name: 'Barangay 11', population: 3200 },
-  ],
-  North: [
-    { name: 'Balintawak', population: 3200 },
-    { name: 'Bugtong', population: 3200 },
-    { name: 'Bulacnin', population: 3200 },
-    { name: 'Dagatan', population: 3200 },
-    { name: 'Inosluban', population: 3200 },
-    { name: 'Lumbang', population: 3200 },
-    { name: 'Marawoy', population: 3200 },
-    { name: 'Plaridel', population: 3200 },
-    { name: 'Pusil', population: 3200 },
-    { name: 'San Lucas', population: 3200 },
-    { name: 'Talisay', population: 3200 },
-  ],
-  East: [
-    { name: 'Antipolo Del Norte', population: 7200 },
-    { name: 'Antipolo Del Sur', population: 3200 },
-    { name: 'Latag', population: 3200 },
-    { name: 'Malitlit', population: 3200 },
-    { name: 'Munting Pulo', population: 3200 },
-    { name: 'Pinagkawitan', population: 3200 },
-    { name: 'Sabang', population: 3200 },
-    { name: 'San Benito', population: 3200 },
-    { name: 'San Celestino', population: 3200 },
-    { name: 'San Francisco', population: 3200 },
-    { name: 'San Isidro', population: 3200 },
-    { name: 'San Jose', population: 3200 },
-    { name: 'Sto. Niño', population: 3200 },
-    { name: 'Sto. Toribio', population: 3200 },
-    { name: 'Tangob', population: 3200 },
-    { name: 'Tipacan', population: 3200 },
-  ],
-  South: [
-    { name: 'Adya', population: 10006 },
-    { name: 'Anilao', population: 3200 },
-    { name: 'Anilao Labac', population: 3200 },
-    { name: 'Bolbok', population: 3200 },
-    { name: 'Calamias', population: 3200 },
-    { name: 'Cumba', population: 3200 },
-    { name: 'Kayumanggi', population: 3200 },
-    { name: 'Lodlod', population: 3200 },
-    { name: 'Mabini', population: 3200 },
-    { name: 'Malagonlong', population: 3200 },
-    { name: 'Pagolingin Bata', population: 3200 },
-    { name: 'Pagolingin East', population: 3200 },
-    { name: 'Pagolingin West', population: 3200 },
-    { name: 'Quezon', population: 3200 },
-    { name: 'Rizal', population: 3200 },
-    { name: 'Sampaguita', population: 3200 },
-    { name: 'San Guillermo', population: 3200 },
-  ],
-};
-
-const districts = Object.keys(barangaysByDistrict);
 
 export default function PopulationScreen() {
   const router = useRouter();
-  const [activeDistrict, setActiveDistrict] = useState('West');
+  const [barangays, setBarangays] = useState([]);
+  const [activeDistrict, setActiveDistrict] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [page, setPage] = useState(0);
   const [editingBarangay, setEditingBarangay] = useState(null);
   const [newPopulation, setNewPopulation] = useState('');
   const pageSize = 5;
 
-  const barangays = barangaysByDistrict[activeDistrict] || [];
-  const filteredBarangays = barangays.filter(b =>
-    b.name.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  // Fetch barangays from Appwrite
+  useEffect(() => {
+    const fetchBarangays = async () => {
+      const res = await databaseServices.listBarangays();
+      if (res.error) {
+        setBarangays([]);
+      } else {
+        setBarangays(res);
+        if (res.length > 0 && !activeDistrict) {
+          setActiveDistrict(res[0].barangay_district);
+        }
+      }
+    };
+    fetchBarangays();
+  }, []);
 
+  // Group barangays by district
+  const barangaysByDistrict = useMemo(() => {
+    const grouped = {};
+    barangays.forEach(b => {
+      if (!grouped[b.barangay_district]) grouped[b.barangay_district] = [];
+      grouped[b.barangay_district].push(b);
+    });
+    return grouped;
+  }, [barangays]);
+
+  const districts = Object.keys(barangaysByDistrict);
+  const barangaysInDistrict = barangaysByDistrict[activeDistrict] || [];
+  const filteredBarangays = barangaysInDistrict.filter(
+    b =>
+      typeof b.barangay_name === 'string' &&
+      b.barangay_name.toLowerCase().includes(searchQuery.toLowerCase())
+  );
   const paginatedBarangays = filteredBarangays.slice(
     page * pageSize,
     (page + 1) * pageSize
   );
-
   const totalPages = Math.ceil(filteredBarangays.length / pageSize);
 
-  return (
-   <ScrollView style={styles.container}>
-             <Navbar />
-
+  // Header renderer
+  const renderHeader = () => (
+    <View>
       {/* District Tabs */}
-      <View style={styles.tabs}>
-        {districts.map(district => (
-          <TouchableOpacity
-            key={district}
-            style={[styles.tab, activeDistrict === district && styles.activeTab]}
-            onPress={() => {
-              setActiveDistrict(district);
-              setSearchQuery('');
-              setPage(0);
-            }}
-          >
-            <Text
-              style={
-                activeDistrict === district ? styles.activeTabText : styles.tabText
-              }
-            >
-              {district.toUpperCase()} DISTRICT
-            </Text>
-          </TouchableOpacity>
-        ))}
+      <View style={styles.tabsContainer}>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+          <View style={styles.tabs}>
+            {districts.map(district => (
+              <TouchableOpacity
+                key={district}
+                style={[styles.tab, activeDistrict === district && styles.activeTab]}
+                onPress={() => {
+                  setActiveDistrict(district);
+                  setSearchQuery('');
+                  setPage(0);
+                }}
+              >
+                <Text
+                  style={
+                    activeDistrict === district ? styles.activeTabText : styles.tabText
+                  }
+                >
+                  {district.toUpperCase()} DISTRICT
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </ScrollView>
       </View>
 
       {/* Search */}
@@ -164,19 +100,24 @@ export default function PopulationScreen() {
         <Text style={[styles.headerCell, { flex: 1 }]}>Population</Text>
         <Text style={[styles.headerCell, { flex: 1 }]}>Actions</Text>
       </View>
+    </View>
+  );
 
-      {/* Table Rows */}
+  return (
+    <View style={styles.container}>
+        <Navbar />
       <FlatList
         data={paginatedBarangays}
-        keyExtractor={(item, index) => index.toString()}
+        keyExtractor={item => item.$id}
+        ListHeaderComponent={renderHeader}
         renderItem={({ item }) => (
           <View style={styles.tableRow}>
-            <Text style={[styles.cell, { flex: 2 }]}>{item.name}</Text>
-            <Text style={[styles.cell, { flex: 1 }]}>{item.population}</Text>
+            <Text style={[styles.cell, { flex: 2 }]}>{item.barangay_name}</Text>
+            <Text style={[styles.cell, { flex: 1 }]}>{item.barangay_population}</Text>
             <TouchableOpacity
               onPress={() => {
                 setEditingBarangay(item);
-                setNewPopulation(item.population.toString());
+                setNewPopulation(item.barangay_population.toString());
               }}
               style={{ flex: 1 }}
             >
@@ -184,24 +125,27 @@ export default function PopulationScreen() {
             </TouchableOpacity>
           </View>
         )}
+        ListFooterComponent={
+          <View>
+            {/* Pagination */}
+            <View style={styles.pagination}>
+              <TouchableOpacity
+                disabled={page === 0}
+                onPress={() => setPage(prev => Math.max(prev - 1, 0))}
+              >
+                <Text style={styles.pageButton}>{'<'}</Text>
+              </TouchableOpacity>
+              <Text style={styles.pageInfo}>Page {page + 1} of {totalPages}</Text>
+              <TouchableOpacity
+                disabled={page + 1 >= totalPages}
+                onPress={() => setPage(prev => prev + 1)}
+              >
+                <Text style={styles.pageButton}>{'>'}</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        }
       />
-
-      {/* Pagination */}
-      <View style={styles.pagination}>
-        <TouchableOpacity
-          disabled={page === 0}
-          onPress={() => setPage(prev => Math.max(prev - 1, 0))}
-        >
-          <Text style={styles.pageButton}>{'<'}</Text>
-        </TouchableOpacity>
-        <Text style={styles.pageInfo}>Page {page + 1} of {totalPages}</Text>
-        <TouchableOpacity
-          disabled={page + 1 >= totalPages}
-          onPress={() => setPage(prev => prev + 1)}
-        >
-          <Text style={styles.pageButton}>{'>'}</Text>
-        </TouchableOpacity>
-      </View>
 
       {/* Edit Modal */}
       <Modal
@@ -212,7 +156,7 @@ export default function PopulationScreen() {
       >
         <View style={styles.modalOverlay}>
           <View style={styles.modalContainer}>
-            <Text style={styles.modalTitle}>Edit Population for {editingBarangay?.name}</Text>
+            <Text style={styles.modalTitle}>Edit Population for {editingBarangay?.barangay_name}</Text>
             <TextInput
               style={styles.modalInput}
               keyboardType="numeric"
@@ -231,14 +175,23 @@ export default function PopulationScreen() {
                 onPress={() => {
                   Alert.alert(
                     'Confirm Update',
-                    `Change population of ${editingBarangay.name} to ${newPopulation}?`,
+                    `Change population of ${editingBarangay.barangay_name} to ${newPopulation}?`,
                     [
                       { text: 'Cancel', style: 'cancel' },
                       {
                         text: 'OK',
-                        onPress: () => {
-                          editingBarangay.population = parseInt(newPopulation);
-                          setEditingBarangay(null);
+                        onPress: async () => {
+                          const res = await databaseServices.updateBarangay(editingBarangay.$id, {
+                            barangay_population: parseInt(newPopulation),
+                          });
+                          if (!res.error) {
+                            // Refresh barangays
+                            const updated = await databaseServices.listBarangays();
+                            setBarangays(updated);
+                            setEditingBarangay(null);
+                          } else {
+                            Alert.alert('Error', res.error);
+                          }
                         },
                       },
                     ]
@@ -251,75 +204,55 @@ export default function PopulationScreen() {
           </View>
         </View>
       </Modal>
-    </ScrollView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#f5f5f5',
+  container: { 
+    flex: 1, 
+    backgroundColor: '#f5f5f5' },
+
+  tabsContainer: {
+    marginTop: 12,
+    marginBottom: 12,
   },
-  navbar: {
-    backgroundColor: '#002D72',
-    padding: 12,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  navbarLeft: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  logoSmall: { height: 32, width: 32, resizeMode: 'contain' },
-  navbarBrand: { color: 'white', fontWeight: 'bold', fontSize: 18 },
-  navLinks: {
-    flexDirection: 'row',
-    justifyContent: 'flex-end',
-    flexGrow: 1,
-    gap: 16,
-    paddingLeft: 20,
-  },
-  navLinkContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginRight: 16,
-    gap: 4,
-  },
-  navLink: { color: 'white', fontWeight: 'bold', fontSize: 14 },
 
   tabs: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
-    marginVertical: 10,
-    gap: 6,
-    paddingHorizontal: 10,
   },
+  
   tab: {
-    padding: 8,
-    borderRadius: 4,
-    backgroundColor: '#ccc',
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    backgroundColor: '#eee',
+    borderRadius: 20,
+    marginRight: 8,
   },
   activeTab: {
-    backgroundColor: '#0056b3',
+    backgroundColor: '#007bff',
   },
-  tabText: { color: '#000' },
-  activeTabText: { color: 'white', fontWeight: 'bold' },
-
+  tabText: {
+    color: '#333',
+    fontWeight: 'bold',
+  },
+  activeTabText: {
+    color: '#fff',
+    fontWeight: 'bold',
+  },
   searchInput: {
-    backgroundColor: 'white',
-    padding: 10,
-    borderRadius: 4,
-    margin: 10,
-    borderColor: '#ccc',
     borderWidth: 1,
+    borderColor: '#ccc',
+    borderRadius: 8,
+    padding: 8,
+    marginBottom: 12,
   },
-
   tableHeader: {
     flexDirection: 'row',
-    backgroundColor: '#dee2e6',
-    paddingVertical: 10,
-    borderTopWidth: 1,
-    borderBottomWidth: 1,
-    borderColor: '#bbb',
-    paddingHorizontal: 10,
+    backgroundColor: '#f5f5f5',
+    paddingVertical: 8,
+    borderTopLeftRadius: 8,
+    borderTopRightRadius: 8,
   },
   headerCell: {
     fontWeight: 'bold',
@@ -327,84 +260,83 @@ const styles = StyleSheet.create({
   },
   tableRow: {
     flexDirection: 'row',
-    backgroundColor: '#fff',
     borderBottomWidth: 1,
-    borderColor: '#ccc',
-    paddingHorizontal: 10,
+    borderBottomColor: '#eee',
+    paddingVertical: 8,
+    alignItems: 'center',
   },
   cell: {
     textAlign: 'center',
-    paddingVertical: 10,
   },
   editButton: {
     color: '#007bff',
     fontWeight: 'bold',
   },
-
   pagination: {
     flexDirection: 'row',
-    justifyContent: 'center',
     alignItems: 'center',
-    marginVertical: 10,
-    gap: 10,
+    justifyContent: 'center',
+    marginVertical: 16,
   },
   pageButton: {
     fontSize: 18,
-    fontWeight: 'bold',
-    color: '#0056b3',
+    paddingHorizontal: 12,
+    color: '#007bff',
   },
   pageInfo: {
-    fontSize: 14,
+    marginHorizontal: 12,
+    fontSize: 16,
   },
-
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
+    backgroundColor: 'rgba(0,0,0,0.3)',
     justifyContent: 'center',
     alignItems: 'center',
   },
   modalContainer: {
-    backgroundColor: 'white',
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    padding: 24,
     width: '80%',
-    padding: 20,
-    borderRadius: 8,
-    elevation: 5,
+    alignItems: 'center',
   },
   modalTitle: {
-    fontSize: 16,
+    fontSize: 18,
     fontWeight: 'bold',
-    marginBottom: 10,
-    textAlign: 'center',
+    marginBottom: 16,
   },
   modalInput: {
     borderWidth: 1,
     borderColor: '#ccc',
-    borderRadius: 4,
-    padding: 10,
-    marginBottom: 20,
+    borderRadius: 8,
+    padding: 8,
+    width: '100%',
+    marginBottom: 16,
     textAlign: 'center',
   },
   modalButtons: {
     flexDirection: 'row',
     justifyContent: 'space-between',
+    width: '100%',
   },
   cancelButton: {
     backgroundColor: '#ccc',
     padding: 10,
-    borderRadius: 4,
+    borderRadius: 8,
     flex: 1,
-    marginRight: 5,
+    marginRight: 8,
+    alignItems: 'center',
   },
   saveButton: {
     backgroundColor: '#007bff',
-    padding: 10,
-    borderRadius: 4,
+    padding:10,
+    borderRadius: 8,
     flex: 1,
-    marginLeft: 5,
+    marginLeft: 8,
+    alignItems: 'center',
   },
   modalButtonText: {
-    color: 'white',
+    color: '#fff',
     fontWeight: 'bold',
-    textAlign: 'center',
   },
 });
