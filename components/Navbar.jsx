@@ -1,18 +1,18 @@
-import React, { useState, useEffect } from 'react';
-import {
-  View,
-  Text,
-  ScrollView,
-  TouchableOpacity,
-  StyleSheet,
-  Image,
-  Dimensions,
-  Alert,
-  Modal,
-} from 'react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { MaterialIcons } from '@expo/vector-icons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useRouter } from 'expo-router';
+import { useEffect, useState } from 'react';
+import {
+  Alert,
+  Dimensions,
+  Image,
+  Modal,
+  SafeAreaView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View
+} from 'react-native';
 
 const screenWidth = Dimensions.get('window').width;
 
@@ -43,7 +43,7 @@ export default function Navbar() {
     { label: 'Dashboard', icon: 'bar-chart', route: '/dashboard' },
     { label: 'Population', icon: 'group', route: '/population' },
     { label: 'Audit Logs', icon: 'history', route: '/audit_logs' },
-    { label: 'Profile', icon: 'person', route: '/profile' },
+    { label: 'My Profile', icon: 'person', route: '/profile' },
     { label: 'Create Account', icon: 'person-add', route: '/create_account' },
     { label: 'Logout', icon: 'logout', route: 'logout' },
   ];
@@ -81,72 +81,80 @@ export default function Navbar() {
   };
 
   return (
-    <View>
-      {/* Top Navbar */}
-      <View style={[styles.navbar, role === 'invest' && styles.navbarInvest]}>
-        <View style={styles.navbarLeft}>
-          <Image source={require('../assets/images/logo1.png')} style={styles.logoSmall} />
-          <Text style={styles.navbarBrand}>CrimeMapping</Text>
-        </View>
-
-        {isMobile ? (
-          <TouchableOpacity onPress={() => setDrawerVisible(true)}>
-            <MaterialIcons name="menu" size={28} color="white" />
-          </TouchableOpacity>
-        ) : (
-          <View style={styles.navLinksRight}>
-            {filteredNavLinks.map((link, index) => (
-              <TouchableOpacity
-                key={index}
-                style={styles.navLinkContainer}
-                onPress={() => handleNavigate(link.route)}
-              >
-                <MaterialIcons name={link.icon} size={18} color="white" />
-                <Text style={styles.navLink}>{link.label}</Text>
-              </TouchableOpacity>
-            ))}
+    <SafeAreaView style={styles.safeArea}>
+      <View>
+        {/* Top Navbar */}
+        <View style={styles.navbar}>
+          <View style={styles.navbarLeft}>
+            <Image source={require('../assets/images/logo1.png')} style={styles.logoSmall} />
+            <Text style={styles.navbarBrand}>Crime Mapping</Text>
           </View>
-        )}
-      </View>
 
-      {/* Sidebar Drawer for Mobile */}
-      <Modal visible={drawerVisible} animationType="slide" transparent>
-        <View style={styles.drawerOverlay}>
-          <TouchableOpacity style={styles.drawerBackdrop} onPress={() => setDrawerVisible(false)} />
-          <View style={styles.drawer}>
-            <View style={styles.drawerHeader}>
-              <Text style={styles.drawerTitle}>Menu</Text>
-              <TouchableOpacity onPress={() => setDrawerVisible(false)}>
-                <MaterialIcons name="close" size={24} color="black" />
-              </TouchableOpacity>
+          {isMobile ? (
+            <TouchableOpacity onPress={() => setDrawerVisible(true)}>
+              <MaterialIcons name="menu" size={28} color="white" />
+            </TouchableOpacity>
+          ) : (
+            <View style={styles.navLinksRight}>
+              {filteredNavLinks.map((link, index) => (
+                <TouchableOpacity
+                  key={index}
+                  style={styles.navLinkContainer}
+                  onPress={() => handleNavigate(link.route)}
+                >
+                  <MaterialIcons name={link.icon} size={18} color="white" />
+                  <Text style={styles.navLink}>{link.label}</Text>
+                </TouchableOpacity>
+              ))}
             </View>
-            {filteredNavLinks.map((link, index) => (
-              <TouchableOpacity
-                key={index}
-                style={styles.drawerLink}
-                onPress={() => handleNavigate(link.route)}
-              >
-                <MaterialIcons name={link.icon} size={20} color="#002D72" />
-                <Text style={styles.drawerLinkText}>{link.label}</Text>
-              </TouchableOpacity>
-            ))}
-          </View>
+          )}
         </View>
-      </Modal>
-    </View>
+
+        {/* Sidebar Drawer for Mobile */}
+        <Modal visible={drawerVisible} animationType="slide" transparent>
+          <SafeAreaView style={styles.drawerSafeArea}>
+            <View style={styles.drawerOverlay}>
+              <TouchableOpacity style={styles.drawerBackdrop} onPress={() => setDrawerVisible(false)} />
+              <View style={styles.drawer}>
+                <View style={styles.drawerHeader}>
+                  <Text style={styles.drawerTitle}>Menu</Text>
+                  <TouchableOpacity onPress={() => setDrawerVisible(false)}>
+                    <MaterialIcons name="close" size={24} color="black" />
+                  </TouchableOpacity>
+                </View>
+                {filteredNavLinks.map((link, index) => (
+                  <TouchableOpacity
+                    key={index}
+                    style={styles.drawerLink}
+                    onPress={() => handleNavigate(link.route)}
+                  >
+                    <MaterialIcons name={link.icon} size={20} color="#002D72" />
+                    <Text style={styles.drawerLinkText}>{link.label}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </View>
+          </SafeAreaView>
+        </Modal>
+      </View>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
+  safeArea: {
+    backgroundColor: '#002D72',
+  },
+  drawerSafeArea: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+  },
   navbar: {
     backgroundColor: '#002D72',
     padding: 12,
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-  },
-  navbarInvest: {
-    backgroundColor: '#003153',
   },
   navbarLeft: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   logoSmall: { height: 32, width: 32, resizeMode: 'contain' },

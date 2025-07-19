@@ -12,7 +12,7 @@ export default function PopulationScreen() {
   const [page, setPage] = useState(0);
   const [editingBarangay, setEditingBarangay] = useState(null);
   const [newPopulation, setNewPopulation] = useState('');
-  const pageSize = 5;
+  const pageSize = 6;
 
   // Fetch barangays from Appwrite
   useEffect(() => {
@@ -55,97 +55,118 @@ export default function PopulationScreen() {
 
   // Header renderer
   const renderHeader = () => (
-    <View>
+    <View style={styles.headerContainer}>
       {/* District Tabs */}
       <View style={styles.tabsContainer}>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-          <View style={styles.tabs}>
-            {districts.map(district => (
-              <TouchableOpacity
-                key={district}
-                style={[styles.tab, activeDistrict === district && styles.activeTab]}
-                onPress={() => {
-                  setActiveDistrict(district);
-                  setSearchQuery('');
-                  setPage(0);
-                }}
-              >
-                <Text
-                  style={
-                    activeDistrict === district ? styles.activeTabText : styles.tabText
-                  }
-                >
-                  {district.toUpperCase()} DISTRICT
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.tabsContent}>
+          {districts.map(district => (
+            <TouchableOpacity
+              key={district}
+              style={[styles.tab, activeDistrict === district && styles.activeTab]}
+              onPress={() => {
+                setActiveDistrict(district);
+                setSearchQuery('');
+                setPage(0);
+              }}
+            >
+              <Text style={[styles.tabText, activeDistrict === district && styles.activeTabText]}>
+                {district.toUpperCase()} DISTRICT
+              </Text>
+            </TouchableOpacity>
+          ))}
         </ScrollView>
       </View>
 
       {/* Search */}
-      <TextInput
-        placeholder="Search Barangay..."
-        value={searchQuery}
-        onChangeText={text => {
-          setSearchQuery(text);
-          setPage(0);
-        }}
-        style={styles.searchInput}
-      />
-
-      {/* Table Header */}
-      <View style={styles.tableHeader}>
-        <Text style={[styles.headerCell, { flex: 2 }]}>Barangay</Text>
-        <Text style={[styles.headerCell, { flex: 1 }]}>Population</Text>
-        <Text style={[styles.headerCell, { flex: 1 }]}>Actions</Text>
+      <View style={styles.searchContainer}>
+        <TextInput
+          placeholder="Search Barangay..."
+          placeholderTextColor="#8E8E93"
+          value={searchQuery}
+          onChangeText={text => {
+            setSearchQuery(text);
+            setPage(0);
+          }}
+          style={styles.searchInput}
+        />
       </View>
+    </View>
+  );
+
+  const renderItem = ({ item, index }) => (
+    <View style={[styles.tableRow, index === paginatedBarangays.length - 1 && styles.lastRow]}>
+      <View style={styles.barangayInfo}>
+        <Text style={styles.barangayName}>{item.barangay_name}</Text>
+        <Text style={styles.populationNumber}>{item.barangay_population.toLocaleString()}</Text>
+      </View>
+      <TouchableOpacity
+        onPress={() => {
+          setEditingBarangay(item);
+          setNewPopulation(item.barangay_population.toString());
+        }}
+        style={styles.editButton}
+      >
+        <Text style={styles.editButtonText}>Edit</Text>
+      </TouchableOpacity>
     </View>
   );
 
   return (
     <View style={styles.container}>
-        <Navbar />
-      <FlatList
-        data={paginatedBarangays}
-        keyExtractor={item => item.$id}
-        ListHeaderComponent={renderHeader}
-        renderItem={({ item }) => (
-          <View style={styles.tableRow}>
-            <Text style={[styles.cell, { flex: 2 }]}>{item.barangay_name}</Text>
-            <Text style={[styles.cell, { flex: 1 }]}>{item.barangay_population}</Text>
-            <TouchableOpacity
-              onPress={() => {
-                setEditingBarangay(item);
-                setNewPopulation(item.barangay_population.toString());
-              }}
-              style={{ flex: 1 }}
-            >
-              <Text style={[styles.cell, styles.editButton]}>Edit</Text>
-            </TouchableOpacity>
+      <Navbar />
+      
+      <View style={styles.content}>
+        {renderHeader()}
+        
+        {/* Data Table */}
+        <View style={styles.tableContainer}>
+          <View style={styles.tableHeader}>
+            <Text style={styles.headerText}>Barangay Population</Text>
+            <Text style={styles.headerSubtext}>
+              {filteredBarangays.length} barangay{filteredBarangays.length !== 1 ? 's' : ''} found
+            </Text>
           </View>
-        )}
-        ListFooterComponent={
-          <View>
-            {/* Pagination */}
+
+          <FlatList
+            data={paginatedBarangays}
+            keyExtractor={item => item.$id}
+            renderItem={renderItem}
+            style={styles.flatList}
+            showsVerticalScrollIndicator={false}
+            ListEmptyComponent={
+              <View style={styles.emptyState}>
+                <Text style={styles.emptyText}>No barangays found</Text>
+                <Text style={styles.emptySubtext}>Try adjusting your search criteria</Text>
+              </View>
+            }
+          />
+
+          {/* Pagination */}
+          {totalPages > 1 && (
             <View style={styles.pagination}>
               <TouchableOpacity
                 disabled={page === 0}
                 onPress={() => setPage(prev => Math.max(prev - 1, 0))}
+                style={[styles.pageButton, page === 0 && styles.disabledButton]}
               >
-                <Text style={styles.pageButton}>{'<'}</Text>
+                <Text style={[styles.pageButtonText, page === 0 && styles.disabledText]}>Previous</Text>
               </TouchableOpacity>
-              <Text style={styles.pageInfo}>Page {page + 1} of {totalPages}</Text>
+              
+              <View style={styles.pageIndicator}>
+                <Text style={styles.pageInfo}>Page {page + 1} of {totalPages}</Text>
+              </View>
+              
               <TouchableOpacity
                 disabled={page + 1 >= totalPages}
                 onPress={() => setPage(prev => prev + 1)}
+                style={[styles.pageButton, page + 1 >= totalPages && styles.disabledButton]}
               >
-                <Text style={styles.pageButton}>{'>'}</Text>
+                <Text style={[styles.pageButtonText, page + 1 >= totalPages && styles.disabledText]}>Next</Text>
               </TouchableOpacity>
             </View>
-          </View>
-        }
-      />
+          )}
+        </View>
+      </View>
 
       {/* Edit Modal */}
       <Modal
@@ -156,36 +177,43 @@ export default function PopulationScreen() {
       >
         <View style={styles.modalOverlay}>
           <View style={styles.modalContainer}>
-            <Text style={styles.modalTitle}>Edit Population for {editingBarangay?.barangay_name}</Text>
-            <TextInput
-              style={styles.modalInput}
-              keyboardType="numeric"
-              value={newPopulation}
-              onChangeText={setNewPopulation}
-            />
+            <Text style={styles.modalTitle}>Edit Population</Text>
+            <Text style={styles.modalSubtitle}>{editingBarangay?.barangay_name}</Text>
+            
+            <View style={styles.inputContainer}>
+              <Text style={styles.inputLabel}>Population Count</Text>
+              <TextInput
+                style={styles.modalInput}
+                keyboardType="numeric"
+                value={newPopulation}
+                onChangeText={setNewPopulation}
+                placeholder="Enter population"
+                placeholderTextColor="#8E8E93"
+              />
+            </View>
+            
             <View style={styles.modalButtons}>
               <TouchableOpacity
                 style={styles.cancelButton}
                 onPress={() => setEditingBarangay(null)}
               >
-                <Text style={styles.modalButtonText}>Cancel</Text>
+                <Text style={styles.cancelButtonText}>Cancel</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={styles.saveButton}
                 onPress={() => {
                   Alert.alert(
                     'Confirm Update',
-                    `Change population of ${editingBarangay.barangay_name} to ${newPopulation}?`,
+                    `Change population of ${editingBarangay.barangay_name} to ${parseInt(newPopulation).toLocaleString()}?`,
                     [
                       { text: 'Cancel', style: 'cancel' },
                       {
-                        text: 'OK',
+                        text: 'Update',
                         onPress: async () => {
                           const res = await databaseServices.updateBarangay(editingBarangay.$id, {
                             barangay_population: parseInt(newPopulation),
                           });
                           if (!res.error) {
-                            // Refresh barangays
                             const updated = await databaseServices.listBarangays();
                             setBarangays(updated);
                             setEditingBarangay(null);
@@ -198,7 +226,7 @@ export default function PopulationScreen() {
                   );
                 }}
               >
-                <Text style={styles.modalButtonText}>Save</Text>
+                <Text style={styles.saveButtonText}>Update</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -209,134 +237,260 @@ export default function PopulationScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { 
-    flex: 1, 
-    backgroundColor: '#f5f5f5' },
-
-  tabsContainer: {
-    marginTop: 12,
-    marginBottom: 12,
+  container: {
+    flex: 1,
+    backgroundColor: '#F2F2F7',
   },
-
-  tabs: {
-    flexDirection: 'row',
-  },
-  
-  tab: {
-    paddingVertical: 8,
+  content: {
+    flex: 1,
     paddingHorizontal: 16,
-    backgroundColor: '#eee',
-    borderRadius: 20,
-    marginRight: 8,
+  },
+  headerContainer: {
+    paddingTop: 16,
+    paddingBottom: 20,
+  },
+  tabsContainer: {
+    marginBottom: 16,
+  },
+  tabsContent: {
+    paddingRight: 16,
+  },
+  tab: {
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 25,
+    marginRight: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: 2,
   },
   activeTab: {
-    backgroundColor: '#007bff',
+    backgroundColor: '#002D72',
+    shadowColor: '#002D72',
+    shadowOpacity: 0.3,
   },
   tabText: {
-    color: '#333',
-    fontWeight: 'bold',
+    color: '#1C1C1E',
+    fontWeight: '600',
+    fontSize: 14,
   },
   activeTabText: {
-    color: '#fff',
-    fontWeight: 'bold',
+    color: '#FFFFFF',
+  },
+  searchContainer: {
+    marginBottom: 4,
   },
   searchInput: {
-    borderWidth: 1,
-    borderColor: '#ccc',
-    borderRadius: 8,
-    padding: 8,
-    marginBottom: 12,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    fontSize: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  tableContainer: {
+    flex: 1,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 4,
+    overflow: 'hidden',
   },
   tableHeader: {
-    flexDirection: 'row',
-    backgroundColor: '#f5f5f5',
-    paddingVertical: 8,
-    borderTopLeftRadius: 8,
-    borderTopRightRadius: 8,
+    paddingHorizontal: 20,
+    paddingVertical: 20,
+    backgroundColor: '#F8F9FA',
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E5EA',
   },
-  headerCell: {
-    fontWeight: 'bold',
-    textAlign: 'center',
+  headerText: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#1C1C1E',
+    marginBottom: 4,
+  },
+  headerSubtext: {
+    fontSize: 14,
+    color: '#8E8E93',
+    fontWeight: '500',
+  },
+  flatList: {
+    flex: 1,
   },
   tableRow: {
     flexDirection: 'row',
-    borderBottomWidth: 1,
-    borderBottomColor: '#eee',
-    paddingVertical: 8,
     alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F2F2F7',
   },
-  cell: {
-    textAlign: 'center',
+  lastRow: {
+    borderBottomWidth: 0,
+  },
+  barangayInfo: {
+    flex: 1,
+  },
+  barangayName: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#1C1C1E',
+    marginBottom: 4,
+  },
+  populationNumber: {
+    fontSize: 14,
+    color: '#8E8E93',
+    fontWeight: '500',
   },
   editButton: {
-    color: '#007bff',
-    fontWeight: 'bold',
+    backgroundColor: '#002D72',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+  },
+  editButtonText: {
+    color: '#FFFFFF',
+    fontWeight: '600',
+    fontSize: 14,
+  },
+  emptyState: {
+    paddingVertical: 60,
+    alignItems: 'center',
+  },
+  emptyText: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#1C1C1E',
+    marginBottom: 8,
+  },
+  emptySubtext: {
+    fontSize: 14,
+    color: '#8E8E93',
   },
   pagination: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    marginVertical: 16,
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    borderTopWidth: 1,
+    borderTopColor: '#F2F2F7',
   },
   pageButton: {
-    fontSize: 18,
-    paddingHorizontal: 12,
-    color: '#007bff',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 8,
+    backgroundColor: '#002D72',
+    minWidth: 80,
+    alignItems: 'center',
+  },
+  disabledButton: {
+    backgroundColor: '#F2F2F7',
+  },
+  pageButtonText: {
+    color: '#FFFFFF',
+    fontWeight: '600',
+    fontSize: 14,
+  },
+  disabledText: {
+    color: '#8E8E93',
+  },
+  pageIndicator: {
+    paddingHorizontal: 16,
   },
   pageInfo: {
-    marginHorizontal: 12,
-    fontSize: 16,
+    fontSize: 14,
+    color: '#1C1C1E',
+    fontWeight: '500',
   },
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.3)',
+    backgroundColor: 'rgba(0, 0, 0, 0.6)',
     justifyContent: 'center',
     alignItems: 'center',
+    paddingHorizontal: 20,
   },
   modalContainer: {
-    backgroundColor: '#fff',
-    borderRadius: 12,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 20,
     padding: 24,
-    width: '80%',
-    alignItems: 'center',
+    width: '100%',
+    maxWidth: 400,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.3,
+    shadowRadius: 20,
+    elevation: 10,
   },
   modalTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    marginBottom: 16,
+    fontSize: 22,
+    fontWeight: '700',
+    color: '#1C1C1E',
+    textAlign: 'center',
+    marginBottom: 8,
+  },
+  modalSubtitle: {
+    fontSize: 16,
+    color: '#8E8E93',
+    textAlign: 'center',
+    marginBottom: 24,
+    fontWeight: '500',
+  },
+  inputContainer: {
+    marginBottom: 24,
+  },
+  inputLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#1C1C1E',
+    marginBottom: 8,
   },
   modalInput: {
-    borderWidth: 1,
-    borderColor: '#ccc',
-    borderRadius: 8,
-    padding: 8,
-    width: '100%',
-    marginBottom: 16,
+    backgroundColor: '#F2F2F7',
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    fontSize: 16,
     textAlign: 'center',
+    fontWeight: '600',
   },
   modalButtons: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    width: '100%',
+    gap: 12,
   },
   cancelButton: {
-    backgroundColor: '#ccc',
-    padding: 10,
-    borderRadius: 8,
     flex: 1,
-    marginRight: 8,
+    backgroundColor: '#F2F2F7',
+    paddingVertical: 14,
+    borderRadius: 12,
     alignItems: 'center',
   },
   saveButton: {
-    backgroundColor: '#007bff',
-    padding:10,
-    borderRadius: 8,
     flex: 1,
-    marginLeft: 8,
+    backgroundColor: '#002D72',
+    paddingVertical: 14,
+    borderRadius: 12,
     alignItems: 'center',
   },
-  modalButtonText: {
-    color: '#fff',
-    fontWeight: 'bold',
+  cancelButtonText: {
+    color: '#8E8E93',
+    fontWeight: '600',
+    fontSize: 16,
+  },
+  saveButtonText: {
+    color: '#FFFFFF',
+    fontWeight: '600',
+    fontSize: 16,
   },
 });

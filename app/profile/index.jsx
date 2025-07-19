@@ -3,18 +3,23 @@ import {
   View,
   Text,
   StyleSheet,
-  Image,
   TouchableOpacity,
   ScrollView,
   Modal,
   TextInput,
   ActivityIndicator,
+  Dimensions,
+  StatusBar,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import { Picker } from '@react-native-picker/picker';
 import Navbar from '../../components/Navbar';
 import userService from '../../services/usersService';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+
+const { width } = Dimensions.get('window');
 
 const getLoggedInUsername = async () => {
   try {
@@ -33,6 +38,8 @@ export default function ViewProfileScreen() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const [usernameError, setUsernameError] = useState('');
+  const [checkingUsername, setCheckingUsername] = useState(false);
 
   useEffect(() => {
     const fetchUser = async () => {
@@ -52,69 +59,156 @@ export default function ViewProfileScreen() {
   }, []);
 
   const handleUpdateProfile = async () => {
+    // Check if username is available before saving
+    if (editForm.username !== user.username) {
+      const isUsernameAvailable = await checkUsernameAvailability(editForm.username);
+      if (!isUsernameAvailable) {
+        return;
+      }
+    }
+
     setSaving(true);
     setError('');
-    // Remove system fields before updating
+    // Remove system fields and empty values before updating
     const { $id, $databaseId, $collectionId, $createdAt, $updatedAt, ...dataToUpdate } = editForm;
-    const res = await userService.updateUser(user.$id, dataToUpdate);
+    
+    // Remove empty or whitespace-only values
+    const cleanedData = Object.entries(dataToUpdate).reduce((acc, [key, value]) => {
+      if (value && typeof value === 'string' && value.trim() !== '') {
+        acc[key] = value.trim();
+      } else if (value && typeof value !== 'string') {
+        acc[key] = value;
+      }
+      return acc;
+    }, {});
+    
+    const res = await userService.updateUser(user.$id, cleanedData);
     if (!res.error) {
       setUser(res.data);
       setModalVisible(false);
+      setUsernameError('');
     } else {
       setError(res.error || 'Failed to update profile');
     }
     setSaving(false);
   };
 
+  const InfoRow = ({ label, value, icon }) => (
+    <View style={styles.infoRow}>
+      <View style={styles.infoLeft}>
+        {icon && <MaterialIcons name={icon} size={20} color="#6B7280" style={styles.infoIcon} />}
+        <Text style={styles.infoLabel}>{label}</Text>
+      </View>
+      <Text style={styles.infoValue}>{value || 'Not set'}</Text>
+    </View>
+  );
+
+  const capitalizeFirstLetter = (str) => {
+    if (!str) return '';
+    return str.charAt(0).toUpperCase() + str.slice(1).toLowerCase();
+  };
+
+  const checkUsernameAvailability = async (username) => {
+    if (!username || username === user.username) {
+      setUsernameError('');
+      return true;
+    }
+
+    setCheckingUsername(true);
+    try {
+      // Add a small delay to prevent excessive API calls while typing
+      await new Promise(resolve => setTimeout(resolve, 500));
+      
+      const res = await userService.getUserByUsername(username);
+      if (res && res.data) {
+        setUsernameError('Username is already taken');
+        return false;
+      } else {
+        setUsernameError('');
+        return true;
+      }
+    } catch (error) {
+      // If user not found, username is available
+      setUsernameError('');
+      return true;
+    } finally {
+      setCheckingUsername(false);
+    }
+  };
+
+  const handleUsernameChange = (text) => {
+    setEditForm({ ...editForm, username: text });
+    if (text && text !== user.username) {
+      checkUsernameAvailability(text);
+    } else {
+      setUsernameError('');
+    }
+  };
+
   if (loading) {
     return (
-      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+      <View style={styles.loadingContainer}>
+        <StatusBar barStyle="dark-content" backgroundColor="#F9FAFB" />
         <ActivityIndicator size="large" color="#002D72" />
+        <Text style={styles.loadingText}>Loading profile...</Text>
       </View>
     );
   }
 
   if (error) {
     return (
-      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
-        <Text style={{ color: 'red' }}>{error}</Text>
+      <View style={styles.errorContainer}>
+        <StatusBar barStyle="dark-content" backgroundColor="#F9FAFB" />
+        <MaterialIcons name="error-outline" size={48} color="#EF4444" />
+        <Text style={styles.errorText}>{error}</Text>
       </View>
     );
   }
 
   return (
-    <ScrollView style={styles.container}>
+    <View style={styles.container}>
+      <StatusBar barStyle="dark-content" backgroundColor="#F9FAFB" />
       <Navbar />
-
-      <View style={styles.profileContainer}>
-        <Text style={styles.sectionTitle}>User Profile</Text>
-
-        <View style={styles.card}>
-         
-          <View style={styles.infoContainer}>
-            <Text style={styles.label}>Full Name</Text>
-            <Text style={styles.value}>{user.name}</Text>
-
-            <Text style={styles.label}>Role</Text>
-            <Text style={styles.value}>{user.role}</Text>
-
-            <Text style={styles.label}>Email</Text>
-            <Text style={styles.value}>{user.email}</Text>
-
-            <Text style={styles.label}>Username</Text>
-            <Text style={styles.value}>{user.username}</Text>
-
-            <View style={styles.statusRow}>
-              <Text style={styles.label}>Status</Text>
-              <View
-                style={[
-                  styles.statusBadge,
-                  { backgroundColor: user.status === 'Active' ? '#28a745' : '#dc3545' },
-                ]}
-              >
-                <Text style={styles.statusText}>{user.status}</Text>
-              </View>
+      
+      <ScrollView 
+        style={styles.scrollView}
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={styles.scrollContent}
+      >
+        {/* Header */}
+        <View style={styles.header}>
+          <Text style={styles.pageTitle}>My Profile</Text>
+          <View style={styles.avatarContainer}>
+            <View style={styles.avatar}>
+              <Text style={styles.avatarText}>
+                {user.name ? user.name.charAt(0).toUpperCase() : 'U'}
+              </Text>
             </View>
+          </View>
+          <Text style={styles.userName}>{user.name || 'Unknown User'}</Text>
+          <Text style={styles.userRole}>{capitalizeFirstLetter(user.role)}</Text>
+        </View>
+
+        {/* Profile Information Card */}
+        <View style={styles.card}>
+          <View style={styles.cardHeader}>
+            <Text style={styles.cardTitle}>Profile Information</Text>
+            <TouchableOpacity
+              style={styles.editIconButton}
+              onPress={() => {
+                setEditForm(user);
+                setModalVisible(true);
+              }}
+            >
+              <MaterialIcons name="edit" size={20} color="#6B7280" />
+            </TouchableOpacity>
+          </View>
+
+          <View style={styles.infoContainer}>
+            <InfoRow label="Full Name" value={user.name} icon="person" />
+            <InfoRow label="Email Address" value={user.email} icon="email" />
+            <InfoRow label="Username" value={user.username} icon="account-circle" />
+            <InfoRow label="Role" value={capitalizeFirstLetter(user.role)} icon="work" />
           </View>
 
           <TouchableOpacity
@@ -128,186 +222,453 @@ export default function ViewProfileScreen() {
             <Text style={styles.editButtonText}>Edit Profile</Text>
           </TouchableOpacity>
         </View>
-      </View>
+      </ScrollView>
 
-      {/* Modal */}
-      <Modal visible={modalVisible} transparent animationType="slide">
-        <View style={styles.modalOverlay}>
+      {/* Fixed Modal with explicit boolean props */}
+      <Modal 
+        visible={modalVisible} 
+        transparent={true}
+        animationType="slide"
+        statusBarTranslucent={true}
+      >
+        <KeyboardAvoidingView 
+          style={styles.modalOverlay}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        >
           <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>Edit Profile</Text>
-
-            <Text style={{ fontWeight: 'bold', marginTop: 10 }}>Full Name</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="Full Name"
-              value={editForm.name}
-              onChangeText={(text) => setEditForm({ ...editForm, name: text })}
-            />
-            <Text style={{ fontWeight: 'bold', marginTop: 10 }}>Email</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="Email"
-              value={editForm.email}
-              onChangeText={(text) => setEditForm({ ...editForm, email: text })}
-              keyboardType="email-address"
-            />
-
-            {/* Removed role picker to prevent updating role */}
-            {/* <View style={styles.pickerWrapper}>
-              <Picker
-                selectedValue={editForm.role}
-                onValueChange={(value) => setEditForm({ ...editForm, role: value })}
-              >
-                <Picker.Item label="Admin" value="Admin" />
-                <Picker.Item label="Invest Team" value="Invest Team" />
-              </Picker>
-            </View> */}
-
-            {/* Add password field */}
-            <Text style={{ fontWeight: 'bold', marginTop: 10 }}>Password</Text>
-            <View style={{ position: 'relative' }}>
-              <TextInput
-                style={styles.input}
-                placeholder="New Password"
-                value={editForm.password || ''}
-                onChangeText={(text) => setEditForm({ ...editForm, password: text })}
-                secureTextEntry={!showPassword}
-              />
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Edit Profile</Text>
               <TouchableOpacity
-                style={{
-                  position: 'absolute',
-                  right: 16,
-                  top: 18,
-                  zIndex: 1,
+                onPress={() => {
+                  setModalVisible(false);
+                  setUsernameError('');
+                  setError('');
                 }}
-                onPress={() => setShowPassword(!showPassword)}
+                style={styles.closeButton}
               >
-                <MaterialIcons
-                  name={showPassword ? 'visibility' : 'visibility-off'}
-                  size={22}
-                  color="#999"
-                />
+                <MaterialIcons name="close" size={24} color="#6B7280" />
               </TouchableOpacity>
             </View>
-            
-            {error ? <Text style={{ color: 'red', marginTop: 8 }}>{error}</Text> : null}
 
-            <TouchableOpacity style={styles.saveButton} onPress={handleUpdateProfile} disabled={saving}>
-              <Text style={styles.saveButtonText}>{saving ? 'Saving...' : 'Save'}</Text>
-            </TouchableOpacity>
+            <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+              <View style={styles.formGroup}>
+                <Text style={styles.inputLabel}>Full Name</Text>
+                <TextInput
+                  style={styles.input}
+                  placeholder="Enter your full name"
+                  value={editForm.name || ''}
+                  onChangeText={(text) => setEditForm({ ...editForm, name: text })}
+                  placeholderTextColor="#9CA3AF"
+                />
+              </View>
 
-            <TouchableOpacity onPress={() => setModalVisible(false)} style={styles.cancelButton}>
-              <Text style={styles.cancelButtonText}>Cancel</Text>
-            </TouchableOpacity>
+              <View style={styles.formGroup}>
+                <Text style={styles.inputLabel}>Email Address</Text>
+                <TextInput
+                  style={styles.input}
+                  placeholder="Enter your email"
+                  value={editForm.email || ''}
+                  onChangeText={(text) => setEditForm({ ...editForm, email: text })}
+                  keyboardType="email-address"
+                  autoCapitalize="none"
+                  placeholderTextColor="#9CA3AF"
+                />
+              </View>
+
+              <View style={styles.formGroup}>
+                <Text style={styles.inputLabel}>Username</Text>
+                <View style={styles.usernameContainer}>
+                  <TextInput
+                    style={[styles.input, usernameError ? styles.inputError : null]}
+                    placeholder="Enter your username"
+                    value={editForm.username || ''}
+                    onChangeText={handleUsernameChange}
+                    autoCapitalize="none"
+                    placeholderTextColor="#9CA3AF"
+                  />
+                  {checkingUsername && (
+                    <View style={styles.usernameLoader}>
+                      <ActivityIndicator size="small" color="#3B82F6" />
+                    </View>
+                  )}
+                </View>
+                {usernameError ? (
+                  <View style={styles.fieldError}>
+                    <MaterialIcons name="error" size={14} color="#EF4444" />
+                    <Text style={styles.fieldErrorText}>{usernameError}</Text>
+                  </View>
+                ) : null}
+              </View>
+
+              <View style={styles.formGroup}>
+                <Text style={styles.inputLabel}>New Password</Text>
+                <View style={styles.passwordContainer}>
+                  <TextInput
+                    style={styles.passwordInput}
+                    placeholder="Enter new password (optional)"
+                    value={editForm.password || ''}
+                    onChangeText={(text) => setEditForm({ ...editForm, password: text })}
+                    secureTextEntry={!showPassword}
+                    placeholderTextColor="#9CA3AF"
+                  />
+                  <TouchableOpacity
+                    style={styles.passwordToggle}
+                    onPress={() => setShowPassword(!showPassword)}
+                  >
+                    <MaterialIcons
+                      name={showPassword ? 'visibility' : 'visibility-off'}
+                      size={20}
+                      color="#9CA3AF"
+                    />
+                  </TouchableOpacity>
+                </View>
+              </View>
+              
+              {error ? (
+                <View style={styles.errorBanner}>
+                  <MaterialIcons name="error" size={16} color="#EF4444" />
+                  <Text style={styles.errorBannerText}>{error}</Text>
+                </View>
+              ) : null}
+            </ScrollView>
+
+            <View style={styles.modalActions}>
+              <TouchableOpacity 
+                style={styles.cancelButton}
+                onPress={() => {
+                  setModalVisible(false);
+                  setUsernameError('');
+                  setError('');
+                }}
+              >
+                <Text style={styles.cancelButtonText}>Cancel</Text>
+              </TouchableOpacity>
+              
+              <TouchableOpacity 
+                style={[
+                  styles.saveButton, 
+                  (saving || !!usernameError || checkingUsername) && styles.saveButtonDisabled
+                ]} 
+                onPress={handleUpdateProfile} 
+                disabled={saving || !!usernameError || checkingUsername}
+              >
+                {saving ? (
+                  <ActivityIndicator size="small" color="white" />
+                ) : (
+                  <>
+                    <MaterialIcons name="check" size={18} color="white" />
+                    <Text style={styles.saveButtonText}>Save Changes</Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            </View>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
-    </ScrollView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#eaf0f6' },
-  profileContainer: { padding: 16 },
-  sectionTitle: { fontSize: 20, fontWeight: 'bold', color: '#002D72', marginBottom: 12 },
-  card: {
-    backgroundColor: '#fff',
-    borderRadius: 10,
-    padding: 20,
-    elevation: 3,
-    shadowColor: '#000',
-    shadowOpacity: 0.1,
-    shadowOffset: { width: 0, height: 2 },
-    shadowRadius: 4,
+  container: {
+    flex: 1,
+    backgroundColor: '#F9FAFB',
+  },
+  scrollView: {
+    flex: 1,
+  },
+  scrollContent: {
+    paddingBottom: 20,
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
     alignItems: 'center',
+    backgroundColor: '#F9FAFB',
   },
-  profileImage: {
-    width: 100,
-    height: 100,
-    borderRadius: 50,
-    marginBottom: 16,
-    borderWidth: 2,
-    borderColor: '#002D72',
-  },
-  infoContainer: {
-    alignSelf: 'stretch',
-    marginBottom: 16,
-  },
-  label: {
-    fontSize: 14,
-    color: '#666',
-    marginTop: 8,
-  },
-  value: {
+  loadingText: {
+    marginTop: 12,
     fontSize: 16,
-    fontWeight: '500',
-    color: '#000',
+    color: '#6B7280',
   },
-  statusRow: {
-    marginTop: 8,
-    flexDirection: 'row',
+  errorContainer: {
+    flex: 1,
+    justifyContent: 'center',
     alignItems: 'center',
-    gap: 8,
+    backgroundColor: '#F9FAFB',
+    padding: 20,
   },
-  statusBadge: {
-    paddingVertical: 4,
-    paddingHorizontal: 10,
-    borderRadius: 12,
+  errorText: {
+    marginTop: 12,
+    fontSize: 16,
+    color: '#EF4444',
+    textAlign: 'center',
+  },
+  
+  // Header Styles
+  header: {
+    alignItems: 'center',
+    paddingTop: 20,
+    paddingBottom: 24,
+    paddingHorizontal: 20,
+  },
+  pageTitle: {
+    fontSize: 28,
+    fontWeight: '800',
+    color: '#1F2937',
+    marginBottom: 20,
+    alignSelf: 'flex-start',
+  },
+  avatarContainer: {
+    marginBottom: 16,
+  },
+  avatar: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: '#002D72',
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  avatarText: {
+    fontSize: 28,
+    fontWeight: '700',
+    color: 'white',
+  },
+  userName: {
+    fontSize: 24,
+    fontWeight: '700',
+    color: '#1F2937',
+    marginBottom: 4,
+  },
+  userRole: {
+    fontSize: 16,
+    color: '#6B7280',
+    marginBottom: 12,
   },
   statusText: {
+    fontSize: 14,
+    fontWeight: '600',
     color: 'white',
-    fontSize: 13,
-    fontWeight: 'bold',
+  },
+
+  // Card Styles
+  card: {
+    backgroundColor: 'white',
+    marginHorizontal: 20,
+    borderRadius: 16,
+    padding: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 12,
+    elevation: 3,
+  },
+  cardHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  cardTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#1F2937',
+  },
+  editIconButton: {
+    padding: 8,
+    borderRadius: 8,
+    backgroundColor: '#F3F4F6',
+  },
+  infoContainer: {
+    gap: 16,
+    marginBottom: 24,
+  },
+  infoRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 2,
+  },
+  infoLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
+  infoIcon: {
+    marginRight: 12,
+  },
+  infoLabel: {
+    fontSize: 15,
+    color: '#6B7280',
+    fontWeight: '500',
+  },
+  infoValue: {
+    fontSize: 15,
+    color: '#1F2937',
+    fontWeight: '600',
+    flex: 1,
+    textAlign: 'right',
   },
   editButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#0056b3',
-    paddingVertical: 10,
-    paddingHorizontal: 20,
-    borderRadius: 6,
+    justifyContent: 'center',
+    backgroundColor: '#002D72',
+    paddingVertical: 14,
+    borderRadius: 12,
+    gap: 8,
   },
   editButtonText: {
     color: 'white',
-    marginLeft: 6,
-    fontWeight: 'bold',
+    fontSize: 16,
+    fontWeight: '600',
   },
 
-  // Modal styles
+  // Modal Styles
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    justifyContent: 'center',
-    padding: 20,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'flex-end',
   },
   modalContent: {
     backgroundColor: 'white',
-    borderRadius: 10,
-    padding: 20,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    paddingTop: 20,
+    paddingHorizontal: 20,
+    paddingBottom: 20,
+    maxHeight: '85%',
   },
-  modalTitle: { fontSize: 18, fontWeight: 'bold', marginBottom: 10, color: '#002D72' },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 24,
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#1F2937',
+  },
+  closeButton: {
+    padding: 4,
+  },
+  formGroup: {
+    marginBottom: 20,
+  },
+  inputLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#374151',
+    marginBottom: 8,
+  },
   input: {
     borderWidth: 1,
-    borderColor: '#ccc',
-    borderRadius: 6,
-    padding: 10,
-    marginVertical: 6,
+    borderColor: '#D1D5DB',
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    fontSize: 16,
+    color: '#1F2937',
+    backgroundColor: '#FAFAFA',
   },
-  pickerWrapper: {
+  inputError: {
+    borderColor: '#EF4444',
+    backgroundColor: '#FEF2F2',
+  },
+  usernameContainer: {
+    position: 'relative',
+  },
+  usernameLoader: {
+    position: 'absolute',
+    right: 16,
+    top: 17,
+  },
+  fieldError: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 6,
+    gap: 4,
+  },
+  fieldErrorText: {
+    fontSize: 12,
+    color: '#EF4444',
+  },
+  passwordContainer: {
+    position: 'relative',
+  },
+  passwordInput: {
     borderWidth: 1,
-    borderColor: '#ccc',
-    borderRadius: 6,
-    marginVertical: 6,
-    overflow: 'hidden',
+    borderColor: '#D1D5DB',
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    paddingRight: 50,
+    fontSize: 16,
+    color: '#1F2937',
+    backgroundColor: '#FAFAFA',
   },
-  saveButton: {
-    backgroundColor: '#28a745',
+  passwordToggle: {
+    position: 'absolute',
+    right: 16,
+    top: 17,
+  },
+  errorBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FEF2F2',
     padding: 12,
-    borderRadius: 6,
-    marginTop: 10,
+    borderRadius: 8,
+    marginBottom: 16,
+    gap: 8,
+  },
+  errorBannerText: {
+    flex: 1,
+    color: '#EF4444',
+    fontSize: 14,
+  },
+  modalActions: {
+    flexDirection: 'row',
+    gap: 12,
+    paddingTop: 20,
+    borderTopWidth: 1,
+    borderTopColor: '#F3F4F6',
+  },
+  cancelButton: {
+    flex: 1,
+    paddingVertical: 14,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#D1D5DB',
     alignItems: 'center',
   },
-  saveButtonText: { color: 'white', fontWeight: 'bold' },
-  cancelButton: { marginTop: 10, alignItems: 'center' },
-  cancelButtonText: { color: 'red', fontWeight: 'bold' },
+  cancelButtonText: {
+    color: '#6B7280',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  saveButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#10B981',
+    paddingVertical: 14,
+    borderRadius: 12,
+    gap: 6,
+  },
+  saveButtonDisabled: {
+    backgroundColor: '#9CA3AF',
+  },
+  saveButtonText: {
+    color: 'white',
+    fontSize: 16,
+    fontWeight: '600',
+  },
 });

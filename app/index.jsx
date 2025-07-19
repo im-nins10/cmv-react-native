@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
+  SafeAreaView,
   View,
   Text,
   TextInput,
@@ -10,286 +11,633 @@ import {
   Dimensions,
   ScrollView,
   Modal,
+  Platform,
+  Keyboard,
+  KeyboardAvoidingView,
 } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import authService from '../services/authService';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { BlurView } from 'expo-blur';
 
-const { width, height } = Dimensions.get('window');
-const isTablet = width > 768;
-const isLandscape = width > height;
+const { height, width } = Dimensions.get('window');
 
 export default function LoginScreen() {
   const router = useRouter();
+  const scrollViewRef = useRef(null);
+  const passwordInputRef = useRef(null);
 
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [rememberMe, setRememberMe] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
-
-  // New state for forgot password modal visibility and email input
   const [forgotPasswordVisible, setForgotPasswordVisible] = useState(false);
   const [forgotEmail, setForgotEmail] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+  const [keyboardVisible, setKeyboardVisible] = useState(false);
 
-  const useHorizontalLayout = isTablet || (isLandscape && width > 600);
+  useEffect(() => {
+    const keyboardDidShowListener = Keyboard.addListener('keyboardDidShow', () => {
+      setKeyboardVisible(true);
+    });
+    const keyboardDidHideListener = Keyboard.addListener('keyboardDidHide', () => {
+      setKeyboardVisible(false);
+    });
+
+    return () => {
+      keyboardDidShowListener?.remove();
+      keyboardDidHideListener?.remove();
+    };
+  }, []);
 
   const handleLogin = async () => {
-    const response = await authService.login(username, password);
-    if (response.error) {
-      Alert.alert('Login Failed', response.error);
-    } else {
-      // Save username, role, and full name to AsyncStorage
-      await AsyncStorage.setItem('username', username);
-      await AsyncStorage.setItem('role', response.user.role || '');
-      await AsyncStorage.setItem('fullName', response.user.name || '');
-      router.push('/landing');
+    if (!username.trim() || !password.trim()) {
+      Alert.alert('Error', 'Please fill in all fields');
+      return;
+    }
+
+    // Dismiss keyboard before login
+    Keyboard.dismiss();
+    
+    setIsLoading(true);
+    try {
+      const response = await authService.login(username, password);
+      if (response.error) {
+        Alert.alert('Login Failed', response.error);
+      } else {
+        await AsyncStorage.setItem('username', username);
+        await AsyncStorage.setItem('role', response.user.role || '');
+        await AsyncStorage.setItem('fullName', response.user.name || '');
+        router.push('/landing');
+      }
+    } catch (error) {
+      Alert.alert('Error', 'Something went wrong. Please try again.');
+    } finally {
+      setIsLoading(false);
     }
   };
 
-  // Handler for sending forgot password email (placeholder)
   const handleSendForgotPassword = () => {
-    if (!forgotEmail) {
+    if (!forgotEmail.trim()) {
       Alert.alert('Error', 'Please enter your email address.');
       return;
     }
-    // Placeholder: Implement actual forgot password logic here
     Alert.alert('Password Reset', `Password reset link sent to ${forgotEmail}`);
     setForgotPasswordVisible(false);
     setForgotEmail('');
   };
 
-  return (
-    <ScrollView contentContainerStyle={styles.scrollContainer} showsVerticalScrollIndicator={false}>
-      <View style={[styles.container, useHorizontalLayout ? styles.horizontalLayout : styles.verticalLayout]}>
-        
-        {/* Login Form Panel */}
-        <View style={[styles.leftPanel, useHorizontalLayout ? styles.leftPanelHorizontal : styles.leftPanelVertical]}>
-          <View style={[styles.wrapper, useHorizontalLayout ? styles.wrapperHorizontal : styles.wrapperVertical]}>
-            
-            <Text style={[styles.title, useHorizontalLayout ? styles.titleHorizontal : styles.titleVertical]}>
-              Login
-            </Text>
+  const handleUsernameSubmit = () => {
+    passwordInputRef.current?.focus();
+  };
 
-            <View style={styles.inputBox}>
-              <Text style={styles.label}>Username</Text>
-              <View style={styles.inputContainer}>
-                <TextInput
-                  style={[styles.input, useHorizontalLayout ? styles.inputHorizontal : styles.inputVertical]}
-                  placeholder="Enter your username"
-                  value={username}
-                  onChangeText={setUsername}
-                  autoCapitalize="none"
+  const handlePasswordSubmit = () => {
+    handleLogin();
+  };
+
+  const scrollToInput = () => {
+    // Simple scroll to form area when input is focused
+    setTimeout(() => {
+      scrollViewRef.current?.scrollTo({
+        y: 200, // Scroll to approximate form position
+        animated: true,
+      });
+    }, 100);
+  };
+
+  return (
+    <SafeAreaView style={styles.safeArea}>
+      {/* Background gradient overlay */}
+      <View style={styles.backgroundOverlay} />
+      
+      <KeyboardAvoidingView 
+        style={styles.keyboardAvoidingView}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
+      >
+        <ScrollView 
+          ref={scrollViewRef}
+          contentContainerStyle={[
+            styles.scrollContainer,
+            keyboardVisible && styles.scrollContainerKeyboard
+          ]} 
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+          scrollEnabled={true}
+          bounces={false}
+        >
+          <TouchableOpacity 
+            style={styles.container}
+            activeOpacity={1}
+            onPress={() => Keyboard.dismiss()}
+          >
+            {/* Logo and Brand Section */}
+            <View style={[
+              styles.headerSection,
+              keyboardVisible && styles.headerSectionCompact
+            ]}>
+              <View style={styles.logoContainer}>
+                <Image
+                  source={require('../assets/images/logo2.png')}
+                  style={[
+                    styles.logo,
+                    keyboardVisible && styles.logoCompact
+                  ]}
+                  resizeMode="contain"
                 />
-                <MaterialIcons name="person" size={18} color="#999" style={styles.inputIcon} />
               </View>
+              <Text style={[
+                styles.brandTitle,
+                keyboardVisible && styles.brandTitleCompact
+              ]}>
+                Welcome Back
+              </Text>
+              <Text style={[
+                styles.brandSubtitle,
+                keyboardVisible && styles.brandSubtitleCompact
+              ]}>
+                Log in to your account
+              </Text>
             </View>
 
-            <View style={styles.inputBox}>
-              <Text style={styles.label}>Password</Text>
-              <View style={styles.inputContainer}>
-                <TextInput
-                  style={[styles.input, useHorizontalLayout ? styles.inputHorizontal : styles.inputVertical]}
-                  placeholder="Enter your password"
-                  value={password}
-                  onChangeText={setPassword}
-                  secureTextEntry={!showPassword}
-                />
-                <TouchableOpacity onPress={() => setShowPassword(!showPassword)} style={styles.inputIcon}>
-                  <MaterialIcons name={showPassword ? "visibility" : "visibility-off"} size={18} color="#999" />
+            {/* Modern Glass Form */}
+            <BlurView intensity={20} tint="light" style={styles.glassForm}>
+              <View style={styles.formContent}>
+                {/* Username Input */}
+                <View style={styles.inputGroup}>
+                  <Text style={styles.inputLabel}>Username</Text>
+                  <View style={styles.inputWrapper}>
+                    <MaterialIcons name="person-outline" size={20} color="#ffffff" style={styles.leftIcon} />
+                    <TextInput
+                      style={styles.textInput}
+                      placeholder="Enter your username"
+                      placeholderTextColor="#cbd5e1"
+                      value={username}
+                      onChangeText={setUsername}
+                      autoCapitalize="none"
+                      autoCorrect={false}
+                      returnKeyType="next"
+                      onSubmitEditing={handleUsernameSubmit}
+                      blurOnSubmit={false}
+                      onFocus={() => {
+                        scrollToInput();
+                      }}
+                    />
+                  </View>
+                </View>
+
+                {/* Password Input */}
+                <View style={styles.inputGroup}>
+                  <Text style={styles.inputLabel}>Password</Text>
+                  <View style={styles.inputWrapper}>
+                    <MaterialIcons name="lock-outline" size={20} color="#ffffff" style={styles.leftIcon} />
+                    <TextInput
+                      ref={passwordInputRef}
+                      style={styles.textInput}
+                      placeholder="Enter your password"
+                      placeholderTextColor="#cbd5e1"
+                      value={password}
+                      onChangeText={setPassword}
+                      secureTextEntry={!showPassword}
+                      autoCorrect={false}
+                      returnKeyType="go"
+                      onSubmitEditing={handlePasswordSubmit}
+                      onFocus={() => {
+                        scrollToInput();
+                      }}
+                    />
+                    <TouchableOpacity 
+                      onPress={() => setShowPassword(!showPassword)} 
+                      style={styles.rightIcon}
+                      hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                    >
+                      <MaterialIcons 
+                        name={showPassword ? "visibility" : "visibility-off"} 
+                        size={20} 
+                        color="#ffffff" 
+                      />
+                    </TouchableOpacity>
+                  </View>
+                </View>
+
+                {/* Remember Me & Forgot Password */}
+                <View style={styles.optionsRow}>
+                  <TouchableOpacity
+                    style={styles.rememberOption}
+                    onPress={() => setRememberMe(!rememberMe)}
+                    activeOpacity={0.7}
+                  >
+                    <View style={[styles.checkbox, rememberMe && styles.checkboxActive]}>
+                      {rememberMe && (
+                        <MaterialIcons name="check" size={14} color="#ffffff" />
+                      )}
+                    </View>
+                    <Text style={styles.rememberText}>Remember me</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity 
+                    onPress={() => setForgotPasswordVisible(true)}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={styles.forgotText}>Forgot password?</Text>
+                  </TouchableOpacity>
+                </View>
+
+                {/* Login Button */}
+                <TouchableOpacity 
+                  style={[styles.loginButton, isLoading && styles.loginButtonDisabled]} 
+                  onPress={handleLogin}
+                  disabled={isLoading}
+                  activeOpacity={0.8}
+                >
+                  {isLoading ? (
+                    <Text style={styles.loginButtonText}>Logging in...</Text>
+                  ) : (
+                    <Text style={styles.loginButtonText}>Log In</Text>
+                  )}
                 </TouchableOpacity>
               </View>
-            </View>
-
-            <View style={styles.rememberForgot}>
-              <TouchableOpacity
-                style={styles.rememberContainer}
-                onPress={() => setRememberMe(!rememberMe)}
-              >
-                <View style={[styles.checkbox, rememberMe && styles.checkboxChecked]}>
-                  {rememberMe && <MaterialIcons name="check" size={12} color="white" />}
-                </View>
-                <Text style={styles.rememberText}>Remember Me</Text>
-              </TouchableOpacity>
-              <TouchableOpacity onPress={() => setForgotPasswordVisible(true)}>
-                <Text style={styles.forgotText}>Forgot Password?</Text>
-              </TouchableOpacity>
-            </View>
-
-            <TouchableOpacity style={styles.btn} onPress={handleLogin}>
-              <Text style={styles.btnText}>Login</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-
-        {/* Logo Panel */}
-        <View style={[styles.rightPanel, useHorizontalLayout ? styles.rightPanelHorizontal : styles.rightPanelVertical]}>
-          <Image
-            source={require('../assets/images/logo.png')}
-            style={[styles.logo, useHorizontalLayout ? styles.logoHorizontal : styles.logoVertical]}
-            resizeMode="contain"
-          />
-        </View>
-      </View>
+            </BlurView>
+          </TouchableOpacity>
+        </ScrollView>
+      </KeyboardAvoidingView>
 
       {/* Forgot Password Modal */}
       <Modal
-        animationType="slide"
+        animationType="fade"
         transparent={true}
         visible={forgotPasswordVisible}
         onRequestClose={() => setForgotPasswordVisible(false)}
+        statusBarTranslucent={true}
       >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContainer}>
-            <Text style={styles.modalTitle}>Forgot Password</Text>
-            <TextInput
-              style={styles.modalInput}
-              placeholder="Enter your email"
-              value={forgotEmail}
-              onChangeText={setForgotEmail}
-              keyboardType="email-address"
-              autoCapitalize="none"
-            />
-            <View style={styles.modalButtons}>
-              <TouchableOpacity style={[styles.btn, styles.modalBtn]} onPress={handleSendForgotPassword}>
-                <Text style={styles.btnText}>Send</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.btn, styles.modalBtn, styles.cancelBtn]}
-                onPress={() => {
-                  setForgotPasswordVisible(false);
-                  setForgotEmail('');
-                }}
+        <KeyboardAvoidingView 
+          style={styles.modalKeyboardAvoidingView}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        >
+          <TouchableOpacity 
+            style={styles.modalOverlay}
+            activeOpacity={1}
+            onPress={() => {
+              Keyboard.dismiss();
+              setForgotPasswordVisible(false);
+            }}
+          >
+            <BlurView intensity={20} tint="dark" style={styles.modalBlur}>
+              <TouchableOpacity 
+                style={styles.modalContent}
+                activeOpacity={1}
+                onPress={() => {}}
               >
-                <Text style={styles.btnText}>Cancel</Text>
+                <View style={styles.modalHeader}>
+                  <Text style={styles.modalTitle}>Reset Password</Text>
+                  <TouchableOpacity 
+                    onPress={() => setForgotPasswordVisible(false)}
+                    style={styles.closeButton}
+                  >
+                    <MaterialIcons name="close" size={24} color="#64748b" />
+                  </TouchableOpacity>
+                </View>
+                
+                <Text style={styles.modalDescription}>
+                  Enter your email address and we'll send you a link to reset your password.
+                </Text>
+
+                <View style={styles.modalInputGroup}>
+                  <Text style={styles.modalInputLabel}>Email Address</Text>
+                  <View style={styles.modalInputWrapper}>
+                    <MaterialIcons name="mail-outline" size={20} color="#64748b" style={styles.leftIcon} />
+                    <TextInput
+                      style={styles.modalTextInput}
+                      placeholder="Enter your email"
+                      placeholderTextColor="#64748b"
+                      value={forgotEmail}
+                      onChangeText={setForgotEmail}
+                      keyboardType="email-address"
+                      autoCapitalize="none"
+                      autoCorrect={false}
+                      returnKeyType="send"
+                      onSubmitEditing={handleSendForgotPassword}
+                    />
+                  </View>
+                </View>
+
+                <View style={styles.modalActions}>
+                  <TouchableOpacity 
+                    style={styles.modalSecondaryButton} 
+                    onPress={() => {
+                      Keyboard.dismiss();
+                      setForgotPasswordVisible(false);
+                      setForgotEmail('');
+                    }}
+                  >
+                    <Text style={styles.modalSecondaryButtonText}>Cancel</Text>
+                  </TouchableOpacity>
+                  
+                  <TouchableOpacity 
+                    style={styles.modalPrimaryButton} 
+                    onPress={handleSendForgotPassword}
+                  >
+                    <Text style={styles.modalPrimaryButtonText}>Send Reset Link</Text>
+                  </TouchableOpacity>
+                </View>
               </TouchableOpacity>
-            </View>
-          </View>
-        </View>
+            </BlurView>
+          </TouchableOpacity>
+        </KeyboardAvoidingView>
       </Modal>
-    </ScrollView>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  scrollContainer: { flexGrow: 1, minHeight: height },
-  container: { flex: 1, minHeight: height },
-  horizontalLayout: { flexDirection: 'row' },
-  verticalLayout: { flexDirection: 'column' },
-
-  leftPanel: { justifyContent: 'center', alignItems: 'center', backgroundColor: '#1e2d44' },
-  leftPanelHorizontal: { flex: 1, paddingHorizontal: 20 },
-  leftPanelVertical: { flex: 2, paddingHorizontal: 20, paddingVertical: 40 },
-
-  rightPanel: { backgroundColor: '#e6e6e6', justifyContent: 'center', alignItems: 'center' },
-  rightPanelHorizontal: { flex: 1 },
-  rightPanelVertical: { flex: 1, paddingVertical: 20 },
-
-  wrapper: {
-    backgroundColor: 'white',
-    borderRadius: 10,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 7.5,
-    elevation: 5,
-    width: '100%',
-  },
-  wrapperHorizontal: { padding: 30, maxWidth: 400 },
-  wrapperVertical: { padding: 20, maxWidth: 350 },
-
-  title: { fontWeight: 'bold', textAlign: 'center', color: 'black' },
-  titleHorizontal: { fontSize: 24, marginBottom: 25 },
-  titleVertical: { fontSize: 22, marginBottom: 20 },
-
-  inputBox: { marginBottom: 20 },
-  label: { fontSize: 14, marginBottom: 5, color: '#333' },
-  inputContainer: { position: 'relative' },
-  input: {
-    width: '100%',
-    paddingRight: 40,
-    borderWidth: 1,
-    borderColor: '#ccc',
-    borderRadius: 8,
-    fontSize: 15,
-    backgroundColor: 'white',
-  },
-  inputHorizontal: { padding: 12 },
-  inputVertical: { padding: 14 },
-  inputIcon: { position: 'absolute', right: 15, top: 12 },
-
-  rememberForgot: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 20,
-    flexWrap: 'wrap',
-  },
-  rememberContainer: { flexDirection: 'row', alignItems: 'center' },
-  checkbox: {
-    width: 16,
-    height: 16,
-    borderWidth: 1,
-    borderColor: '#ccc',
-    borderRadius: 3,
-    marginRight: 8,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  checkboxChecked: { backgroundColor: '#226bff', borderColor: '#226bff' },
-  rememberText: { fontSize: 14, color: '#333' },
-  forgotText: { fontSize: 14, color: '#226bff', textDecorationLine: 'underline' },
-
-  btn: {
-    width: '100%',
-    backgroundColor: '#226bff',
-    padding: 12,
-    borderRadius: 8,
-    alignItems: 'center',
-  },
-  btnText: { color: 'white', fontSize: 16, fontWeight: 'bold' },
-
-  logo: { maxWidth: '80%', maxHeight: '80%' },
-  logoHorizontal: { width: 300, height: 300 },
-  logoVertical: { width: 200, height: 200 },
-
-  // Modal styles
-  modalOverlay: {
+  safeArea: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
+    backgroundColor: '#002D72',
+  },
+  backgroundOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+    background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+  },
+  keyboardAvoidingView: {
+    flex: 1,
+  },
+  scrollContainer: {
+    flexGrow: 1,
+    minHeight: height,
     justifyContent: 'center',
+    paddingHorizontal: 24,
+    paddingVertical: 40,
+  },
+  scrollContainerKeyboard: {
+    justifyContent: 'flex-start',
+    paddingTop: 20,
+    paddingBottom: 40,
+  },
+  container: {
+    width: '100%',
+    maxWidth: 400,
+    alignSelf: 'center',
+  },
+  
+  // Header Section
+  headerSection: {
     alignItems: 'center',
+    marginBottom: 40,
   },
-  modalContainer: {
-    width: '85%',
-    backgroundColor: 'white',
-    borderRadius: 10,
-    padding: 20,
-    elevation: 10,
+  headerSectionCompact: {
+    marginBottom: 20,
   },
-  modalTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    marginBottom: 15,
+  logoContainer: {
+    marginBottom: 24,
+  },
+  logo: {
+    width: 120,
+    height: 120,
+  },
+  logoCompact: {
+    width: 80,
+    height: 80,
+  },
+  brandTitle: {
+    fontSize: 32,
+    fontWeight: '700',
+    color: '#ffffff',
+    marginBottom: 8,
     textAlign: 'center',
   },
-  modalInput: {
-    borderWidth: 1,
-    borderColor: '#ccc',
-    borderRadius: 8,
-    padding: 12,
-    fontSize: 16,
-    marginBottom: 20,
+  brandTitleCompact: {
+    fontSize: 24,
+    marginBottom: 4,
   },
-  modalButtons: {
+  brandSubtitle: {
+    fontSize: 16,
+    color: 'rgba(255, 255, 255, 0.8)',
+    textAlign: 'center',
+  },
+  brandSubtitleCompact: {
+    fontSize: 14,
+  },
+
+  // Glass Form
+  glassForm: {
+    borderRadius: 24,
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.2)',
+    overflow: 'hidden',
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 20 },
+    shadowOpacity: 0.3,
+    shadowRadius: 30,
+    elevation: 20,
+  },
+  formContent: {
+    padding: 32,
+  },
+
+  // Input Styling
+  inputGroup: {
+    marginBottom: 24,
+  },
+  inputLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#ffffff',
+    marginBottom: 8,
+    marginLeft: 4,
+  },
+  inputWrapper: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.15)',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.2)',
+    height: 52,
+    paddingHorizontal: 16,
+  },
+  leftIcon: {
+    marginRight: 12,
+  },
+  rightIcon: {
+    marginLeft: 12,
+    padding: 4,
+  },
+  textInput: {
+    flex: 1,
+    fontSize: 16,
+    color: '#ffffff',
+    height: '100%',
+  },
+
+  // Options Row
+  optionsRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 32,
   },
-  modalBtn: {
+  rememberOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  checkbox: {
+    width: 20,
+    height: 20,
+    borderRadius: 6,
+    borderWidth: 2,
+    borderColor: 'rgba(255, 255, 255, 0.4)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 8,
+    backgroundColor: 'transparent',
+  },
+  checkboxActive: {
+    backgroundColor: '#3b82f6',
+    borderColor: '#3b82f6',
+  },
+  rememberText: {
+    fontSize: 14,
+    color: 'rgba(255, 255, 255, 0.8)',
+  },
+  forgotText: {
+    fontSize: 14,
+    color: '#60a5fa',
+    fontWeight: '500',
+  },
+
+  // Login Button
+  loginButton: {
+    backgroundColor: '#3b82f6',
+    borderRadius: 12,
+    height: 52,
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#3b82f6',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.3,
+    shadowRadius: 12,
+    elevation: 8,
+  },
+  loginButtonDisabled: {
+    opacity: 0.7,
+  },
+  loginButtonText: {
+    color: '#ffffff',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+
+  // Modal Styles
+  modalKeyboardAvoidingView: {
     flex: 1,
-    marginHorizontal: 5,
   },
-  cancelBtn: {
-    backgroundColor: '#999',
+  modalOverlay: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    padding: 20,
+  },
+  modalBlur: {
+    width: '100%',
+    maxWidth: 400,
+    borderRadius: 20,
+    overflow: 'hidden',
+  },
+  modalContent: {
+    backgroundColor: 'rgba(255, 255, 255, 0.95)',
+    padding: 24,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  modalTitle: {
+    fontSize: 24,
+    fontWeight: '700',
+    color: '#1e293b',
+  },
+  closeButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: 'rgba(100, 116, 139, 0.1)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalDescription: {
+    fontSize: 14,
+    color: '#64748b',
+    lineHeight: 20,
+    marginBottom: 24,
+  },
+  modalInputGroup: {
+    marginBottom: 32,
+  },
+  modalInputLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#374151',
+    marginBottom: 8,
+  },
+  modalInputWrapper: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#f8fafc',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    height: 48,
+    paddingHorizontal: 16,
+  },
+  modalTextInput: {
+    flex: 1,
+    fontSize: 16,
+    color: '#1e293b',
+    height: '100%',
+  },
+  modalActions: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  modalSecondaryButton: {
+    flex: 1,
+    height: 48,
+    borderRadius: 12,
+    backgroundColor: 'rgba(100, 116, 139, 0.1)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalSecondaryButtonText: {
+    color: '#64748b',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  modalPrimaryButton: {
+    flex: 1,
+    height: 48,
+    borderRadius: 12,
+    backgroundColor: '#3b82f6',
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#3b82f6',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  modalPrimaryButtonText: {
+    color: '#ffffff',
+    fontSize: 16,
+    fontWeight: '600',
   },
 });
