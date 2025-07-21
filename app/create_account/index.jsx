@@ -600,7 +600,7 @@ const styles = StyleSheet.create({
   input: { borderWidth: 1, borderColor: '#ccc', marginVertical: 6, padding: 10, borderRadius: 4 },
   passwordContainer: { flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: '#ccc', borderRadius: 4, paddingHorizontal: 10, marginVertical: 6 },
   passwordInput: { flex: 1, paddingVertical: 10 },
-  submitButton: { backgroundColor: '#0056b3', padding: 12, borderRadius: 4, marginTop: 16 },
+  submitButton: { backgroundColor: '#002D72', padding: 12, borderRadius: 4, marginTop: 16 },
   submitButtonText: { color: 'white', fontWeight: 'bold', textAlign: 'center' },
   usersSection: { padding: 16, backgroundColor: '#fff' },
   tableScrollView: { flex: 1 },
@@ -617,7 +617,7 @@ const styles = StyleSheet.create({
   actionsColumn: { width: 180, flexDirection: 'row', gap: 8, justifyContent: 'center' },
   statusBadge: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 12, alignSelf: 'center' },
   statusText: { color: 'white', fontSize: 12, fontWeight: 'bold' },
-  updateButton: { backgroundColor: '#007bff', paddingHorizontal: 8, paddingVertical: 6, borderRadius: 4, flexDirection: 'row', alignItems: 'center', gap: 4 },
+  updateButton: { backgroundColor: '#002D72', paddingHorizontal: 8, paddingVertical: 6, borderRadius: 4, flexDirection: 'row', alignItems: 'center', gap: 4 },
   deactivateButton: { backgroundColor: '#dc3545', paddingHorizontal: 8, paddingVertical: 6, borderRadius: 4, flexDirection: 'row', alignItems: 'center', gap: 4 },
   buttonText: { color: 'white', fontSize: 12, fontWeight: 'bold' },
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', padding: 20 },
@@ -748,7 +748,7 @@ const styles = StyleSheet.create({
     color: '#333',
   },
   dropdownItemTextSelected: {
-    color: '#007bff',
+    color: '#002D72',
     fontWeight: '600', 
   },
 });

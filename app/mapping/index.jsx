@@ -1,4 +1,5 @@
-import * as DocumentPicker from 'expo-document-picker';
+import * as Print from 'expo-print';
+import * as Sharing from 'expo-sharing';
 import { useEffect, useRef, useState } from 'react';
 import {
   Alert,
@@ -12,7 +13,6 @@ import {
   View
 } from 'react-native';
 import MapView, { Marker } from 'react-native-maps';
-import { Menu, Button as PaperButton } from 'react-native-paper';
 import * as XLSX from 'xlsx';
 import Navbar from '../../components/Navbar';
 import { config } from '../../services/appwrite';
@@ -24,6 +24,22 @@ const lipaBounds = {
 };
 
 export default function CrimeMapScreen() {
+  // Helper function to format date string to "MM/DD/YYYY hh:mm AM/PM" format
+  const formatDateTime = (dateString) => {
+    if (!dateString) return 'N/A';
+    const date = new Date(dateString);
+    if (isNaN(date.getTime())) return dateString; // return original if invalid date
+    const options = {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: 'numeric',
+      minute: '2-digit',
+      hour12: true,
+    };
+    return date.toLocaleString(undefined, options);
+  };
+
   // Store barangay risk data for heatmap
   const [barangayRiskData, setBarangayRiskData] = useState([]);
   const mapRef = useRef(null);
@@ -36,9 +52,9 @@ export default function CrimeMapScreen() {
   const [filterCrimeType, setFilterCrimeType] = useState('');
   const [filterStatus, setFilterStatus] = useState('');
 
-  const [menuVisible1, setMenuVisible1] = useState(false);
-  const [menuVisible2, setMenuVisible2] = useState(false);
-  const [menuVisible3, setMenuVisible3] = useState(false);
+  const [barangayModalVisible, setBarangayModalVisible] = useState(false);
+  const [crimeTypeModalVisible, setCrimeTypeModalVisible] = useState(false);
+  const [statusModalVisible, setStatusModalVisible] = useState(false);
 
   useEffect(() => {
     async function fetchCrimeRecordsAndRisk() {
@@ -51,7 +67,17 @@ export default function CrimeMapScreen() {
         const riskMap = {};
         barangayRisks.forEach((b) => {
           const key = (b.barangay || '').trim().toLowerCase();
-          riskMap[key] = { risk_level: b.riskLevel, crimeRate: b.crimeRate };
+          // Normalize riskLevel to string labels
+          let riskLabel = 'unknown';
+          if (typeof b.riskLevel === 'number') {
+            if (b.riskLevel === 0) riskLabel = 'low';
+            else if (b.riskLevel === 1) riskLabel = 'medium';
+            else if (b.riskLevel === 2) riskLabel = 'high';
+          } else if (typeof b.riskLevel === 'string') {
+            const rl = b.riskLevel.toLowerCase();
+            if (rl === 'low' || rl === 'medium' || rl === 'high') riskLabel = rl;
+          }
+          riskMap[key] = { risk_level: riskLabel, crimeRate: b.crimeRate };
         });
         // Map records to marker format expected by the map, with riskLevel and crimeRate
         const mappedMarkers = records.map((record) => {
@@ -88,7 +114,7 @@ export default function CrimeMapScreen() {
   }, []);
 
   const barangays = Array.from(new Set(markerData.map((m) => m.barangay)));
-  const crimeTypes = Array.from(new Set(markerData.map((m) => m.crimeType)));
+  const crimeTypes = Array.from(new Set(markerData.map((m) => m.offense)));
   const statuses = Array.from(new Set(markerData.map((m) => m.status)));
 
   const filteredData = markerData.filter((marker) => {
@@ -97,10 +123,11 @@ export default function CrimeMapScreen() {
       (marker.type_of_place || '').toLowerCase().includes(search) ||
       (marker.barangay || '').toLowerCase().includes(search) ||
       (marker.location || '').toLowerCase().includes(search) ||
-      (marker.type_of_crime || '').toLowerCase().includes(search);
+      (marker.type_of_crime || '').toLowerCase().includes(search) ||
+      (marker.offense || '').toLowerCase().includes(search);
 
     const matchesBarangay = !filterBarangay || marker.barangay === filterBarangay;
-    const matchesCrimeType = !filterCrimeType || marker.type_of_crime === filterCrimeType;
+    const matchesCrimeType = !filterCrimeType || marker.offense === filterCrimeType;
     const matchesStatus = !filterStatus || marker.status === filterStatus;
 
     return matchesSearch && matchesBarangay && matchesCrimeType && matchesStatus;
@@ -147,8 +174,6 @@ export default function CrimeMapScreen() {
         let successCount = 0;
         let failCount = 0;
         for (const row of rows) {
-          // Map row fields to your Appwrite schema
-          // You may need to adjust field names to match your database
           const data = {
             type_of_place: row.type_of_place || row['Type of Place'] || '',
             date_time_reported: row.date_time_reported || row['Date Reported'] || '',
@@ -190,6 +215,295 @@ export default function CrimeMapScreen() {
     }
   };
 
+  const handleDownloadPDF = async () => {
+    try {
+      const snapshot = await mapRef.current.takeSnapshot({
+        width: 800,
+        height: 600,
+        format: 'png',
+        quality: 0.8,
+        result: 'base64'
+      });
+
+      const now = new Date();
+      const dateStr = now.toLocaleDateString();
+      const timeStr = now.toLocaleTimeString();
+
+      const totalRecords = filteredData.length;
+      const highRisk = filteredData.filter(m => m.risk_level === 'high').length;
+      const mediumRisk = filteredData.filter(m => m.risk_level === 'medium').length;
+      const lowRisk = filteredData.filter(m => m.risk_level === 'low').length;
+
+      let summaryRows = '';
+      filteredData.forEach((marker, index) => {
+        let riskColor = '#e8f5e8';
+        if (marker.risk_level === 'high') riskColor = '#ffebee';
+        else if (marker.risk_level === 'medium') riskColor = '#fff3e0';
+        else if (marker.risk_level === 'unknown') riskColor = '#f0f0f0';
+
+        summaryRows += `
+          <tr style="background-color: ${riskColor};">
+            <td style="padding: 8px; border: 1px solid #ddd;">${index + 1}</td>
+            <td style="padding: 8px; border: 1px solid #ddd;">${marker.offense || 'N/A'}</td>
+            <td style="padding: 8px; border: 1px solid #ddd;">${marker.barangay || 'N/A'}</td>
+            <td style="padding: 8px; border: 1px solid #ddd;">${marker.location || 'N/A'}</td>
+            <td style="padding: 8px; border: 1px solid #ddd; text-transform: uppercase;">${marker.risk_level || 'N/A'}</td>
+            <td style="padding: 8px; border: 1px solid #ddd;">${marker.status || 'N/A'}</td>
+            <td style="padding: 8px; border: 1px solid #ddd;">${formatDateTime(marker.date_time_committed)}</td>
+          </tr>
+        `;
+      });
+
+      const htmlContent = `
+        <html>
+          <head>
+            <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0, user-scalable=no" />
+            <style>
+              body { 
+                font-family: Arial, sans-serif; 
+                margin: 40px 40px 40px 40px; 
+                color: #333; 
+              }
+              .header { 
+                text-align: center; 
+                margin-bottom: 20px; 
+                border-bottom: 2px solid #007AFF;
+                padding-bottom: 10px;
+              }
+              .title { 
+                font-size: 24px; 
+                font-weight: bold; 
+                margin-bottom: 5px; 
+              }
+              .subtitle { 
+                font-size: 14px; 
+                color: #666; 
+              }
+              .filters { 
+                background-color: #f8f9fa; 
+                padding: 15px; 
+                border-radius: 8px; 
+                margin-bottom: 20px; 
+              }
+              .filter-title { 
+                font-weight: bold; 
+                margin-bottom: 10px; 
+                color: #007AFF; 
+              }
+              .filter-item { 
+                margin: 5px 0; 
+              }
+              .statistics { 
+                display: flex; 
+                justify-content: space-around; 
+                margin: 20px 0; 
+                background-color: #f0f8ff;
+                padding: 15px;
+                border-radius: 8px;
+              }
+              .stat-item { 
+                text-align: center; 
+              }
+              .stat-number { 
+                font-size: 24px; 
+                font-weight: bold; 
+                color: #007AFF; 
+              }
+              .stat-label { 
+                font-size: 12px; 
+                color: #666; 
+              }
+              .map-container { 
+                text-align: center; 
+                margin: 20px 0; 
+              }
+              .map-image { 
+                max-width: 100%; 
+                border: 2px solid #ddd; 
+                border-radius: 8px; 
+              }
+              .table-container { 
+                margin-top: 30px; 
+              }
+              table { 
+                width: 100%; 
+                border-collapse: collapse; 
+                font-size: 11px; 
+              }
+              th { 
+                background-color: #007AFF; 
+                color: white; 
+                padding: 10px; 
+                text-align: left; 
+                border: 1px solid #ddd; 
+              }
+              .legend { 
+                margin: 20px 0; 
+                background-color: #f8f9fa; 
+                padding: 15px; 
+                border-radius: 8px; 
+              }
+              .legend-title { 
+                font-weight: bold; 
+                margin-bottom: 10px; 
+                color: #007AFF; 
+              }
+              .legend-item {
+                display: inline-block; 
+                margin: 5px 15px 5px 0; 
+                font-size: 12px; 
+              }
+              .legend-color { 
+                display: inline-block; 
+                width: 20px; 
+                height: 15px; 
+                margin-right: 8px; 
+                border-radius: 3px; 
+                vertical-align: middle; 
+              }
+              .page-break { 
+                page-break-before: always; 
+              }
+              h3 {
+                margin-top: 0;
+                margin-bottom: 10px;
+                color: #007AFF;
+              }
+              table {
+                font-family: Arial, sans-serif;
+                font-size: 12px;
+              }
+              th, td {
+                padding: 8px;
+                border: 1px solid #ddd;
+                text-align: left;
+              }
+              .filters {
+                font-size: 13px;
+              }
+              .statistics {
+                font-size: 13px;
+              }
+            </style>
+          </head>
+          <body>
+            <div class="header">
+              <div class="title">📍 Lipa City Crime Map Report</div>
+              <div class="subtitle">Generated on ${dateStr} at ${timeStr}</div>
+            </div>
+
+            <div class="filters">
+              <div class="filter-title">Applied Filters:</div>
+              <div class="filter-item"><strong>Search Query:</strong> ${searchQuery || 'None'}</div>
+              <div class="filter-item"><strong>Barangay:</strong> ${filterBarangay || 'All'}</div>
+              <div class="filter-item"><strong>Offense:</strong> ${filterCrimeType || 'All'}</div>
+              <div class="filter-item"><strong>Status:</strong> ${filterStatus || 'All'}</div>
+            </div>
+
+            <div class="statistics">
+              <div class="stat-item">
+                <div class="stat-number">${totalRecords}</div>
+                <div class="stat-label">Total Records</div>
+              </div>
+              <div class="stat-item">
+                <div class="stat-number" style="color: #dc3545;">${highRisk}</div>
+                <div class="stat-label">High Risk</div>
+              </div>
+              <div class="stat-item">
+                <div class="stat-number" style="color: #fd7e14;">${mediumRisk}</div>
+                <div class="stat-label">Medium Risk</div>
+              </div>
+              <div class="stat-item">
+                <div class="stat-number" style="color: #28a745;">${lowRisk}</div>
+                <div class="stat-label">Low Risk</div>
+              </div>
+            </div>
+
+            <div class="legend">
+              <div class="legend-title">Map Legend:</div>
+              <div class="legend-item">
+                <span class="legend-color" style="background-color: #dc3545;"></span>High Risk Areas
+              </div>
+              <div class="legend-item">
+                <span class="legend-color" style="background-color: #fd7e14;"></span>Medium Risk Areas
+              </div>
+              <div class="legend-item">
+                <span class="legend-color" style="background-color: #28a745;"></span>Low Risk Areas
+              </div>
+              <div class="legend-item">
+                <span class="legend-color" style="background-color: #6c757d;"></span>Unknown Risk
+              </div>
+            </div>
+
+            <div class="map-container">
+              <h3>Crime Distribution Map</h3>
+              <img src="data:image/png;base64,${snapshot}" class="map-image" />
+            </div>
+
+            <div class="table-container page-break" style="padding: 0 20px;">
+              <h3>Detailed Crime Records</h3>
+              <table>
+                <thead>
+                  <tr>
+                    <th>#</th>
+                    <th>Offense</th>
+                    <th>Barangay</th>
+                    <th>Location</th>
+                    <th>Risk Level</th>
+                    <th>Status</th>
+                    <th>Date Committed</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${summaryRows}
+                </tbody>
+              </table>
+            </div>
+
+            <div style="margin-top: 30px; text-align: center; font-size: 12px; color: #666; border-top: 1px solid #ddd; padding-top: 15px;">
+              <p>This report was generated from the Lipa City Crime Mapping System</p>
+              <p>Report contains ${totalRecords} filtered crime records as of ${dateStr}</p>
+            </div>
+          </body>
+        </html>
+      `;
+
+      const { uri } = await Print.printToFileAsync({
+        html: htmlContent,
+        base64: false,
+        fileName: 'Lipa City Crime Map Report.pdf'
+      });
+
+      if (await Sharing.isAvailableAsync()) {
+        await Sharing.shareAsync(uri, {
+          mimeType: 'application/pdf',
+          dialogTitle: 'Share Crime Map Report'
+        });
+      } else {
+        Alert.alert('📄 PDF Generated', 'PDF saved successfully!');
+      }
+
+    } catch (error) {
+      console.error('PDF generation error:', error);
+      Alert.alert('❌ Error', 'Failed to generate PDF. Please try again.');
+    }
+  };
+
+  const handleBarangaySelect = (barangay) => {
+    setFilterBarangay(barangay);
+    setBarangayModalVisible(false);
+  };
+
+  const handleCrimeTypeSelect = (crimeType) => {
+    setFilterCrimeType(crimeType);
+    setCrimeTypeModalVisible(false);
+  };
+
+  const handleStatusSelect = (status) => {
+    setFilterStatus(status);
+    setStatusModalVisible(false);
+  };
+
   return (
     <View style={styles.container}>
       <Navbar />
@@ -200,70 +514,152 @@ export default function CrimeMapScreen() {
         <TextInput
           style={styles.searchInput}
           placeholder="Search by location, barangay, or crime type..."
+          placeholderTextColor="#666"
           value={searchQuery}
           onChangeText={setSearchQuery}
         />
         <TouchableOpacity style={styles.iconButton} onPress={handleImportFile}>
-          <Text style={styles.iconButtonText}>+</Text>
+          <Text style={styles.excelIcon}>📁↗</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.pdfButton} onPress={handleDownloadPDF}>
+          <Text style={styles.pdfIcon}>📄⬇</Text>
         </TouchableOpacity>
       </View>
 
-      {/* Dropdown Filters */}
+      {/* Filter Row */}
       <View style={styles.filterRow}>
         <View style={styles.dropdownContainer}>
           <Text style={styles.dropdownLabel}>Barangay</Text>
-          <Menu
-            visible={menuVisible1}
-            onDismiss={() => setMenuVisible1(false)}
-            anchor={
-              <PaperButton mode="outlined" onPress={() => setMenuVisible1(true)}>
-                {filterBarangay || 'All'}
-              </PaperButton>
-            }
+          <TouchableOpacity 
+            style={styles.filterButton} 
+            onPress={() => setBarangayModalVisible(true)}
           >
-            <Menu.Item onPress={() => setFilterBarangay('')} title="All" />
-            {barangays.map((b, i) => (
-              <Menu.Item key={b || `barangay-${i}`} onPress={() => setFilterBarangay(b)} title={b} />
-            ))}
-          </Menu>
+            <Text style={styles.filterButtonText}>{filterBarangay || 'All Barangays'}</Text>
+          </TouchableOpacity>
         </View>
-
+        
         <View style={styles.dropdownContainer}>
-          <Text style={styles.dropdownLabel}>Crime Type</Text>
-          <Menu
-            visible={menuVisible2}
-            onDismiss={() => setMenuVisible2(false)}
-            anchor={
-              <PaperButton mode="outlined" onPress={() => setMenuVisible2(true)}>
-                {filterCrimeType || 'All'}
-              </PaperButton>
-            }
+          <Text style={styles.dropdownLabel}>Offense</Text>
+          <TouchableOpacity 
+            style={styles.filterButton} 
+            onPress={() => setCrimeTypeModalVisible(true)}
           >
-            <Menu.Item onPress={() => setFilterCrimeType('')} title="All" />
-            {crimeTypes.map((c, i) => (
-              <Menu.Item key={c || `crimeType-${i}`} onPress={() => setFilterCrimeType(c)} title={c} />
-            ))}
-          </Menu>
+            <Text style={styles.filterButtonText}>{filterCrimeType || 'All Offenses'}</Text>
+          </TouchableOpacity>
         </View>
-
+        
         <View style={styles.dropdownContainer}>
           <Text style={styles.dropdownLabel}>Status</Text>
-          <Menu
-            visible={menuVisible3}
-            onDismiss={() => setMenuVisible3(false)}
-            anchor={
-              <PaperButton mode="outlined" onPress={() => setMenuVisible3(true)}>
-                {filterStatus || 'All'}
-              </PaperButton>
-            }
+          <TouchableOpacity 
+            style={styles.filterButton} 
+            onPress={() => setStatusModalVisible(true)}
           >
-            <Menu.Item onPress={() => setFilterStatus('')} title="All" />
-            {statuses.map((s, i) => (
-              <Menu.Item key={s || `status-${i}`} onPress={() => setFilterStatus(s)} title={s} />
-            ))}
-          </Menu>
+            <Text style={styles.filterButtonText}>{filterStatus || 'All Statuses'}</Text>
+          </TouchableOpacity>
         </View>
       </View>
+
+      {/* Barangay Modal */}
+      <Modal
+        transparent={true}
+        visible={barangayModalVisible}
+        animationType="fade"
+        onRequestClose={() => setBarangayModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={[styles.modalTitle, { marginBottom: 10 }]}>Select Barangay</Text>
+            <ScrollView style={{ maxHeight: 300 }}>
+              <TouchableOpacity
+                style={{ paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: '#eee' }}
+                onPress={() => handleBarangaySelect('')}
+              >
+                <Text style={{ fontSize: 16, color: '#1F2937' }}>All Barangays</Text>
+              </TouchableOpacity>
+              {barangays.map((b, idx) => (
+                <TouchableOpacity
+                  key={b || `barangay-${idx}`}
+                  style={{ paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: '#eee' }}
+                  onPress={() => handleBarangaySelect(b)}
+                >
+                  <Text style={{ fontSize: 16, color: '#1F2937' }}>{b}</Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+            <TouchableOpacity style={styles.modalButton} onPress={() => setBarangayModalVisible(false)}>
+              <Text style={styles.modalButtonText}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Crime Type Modal */}
+      <Modal
+        transparent={true}
+        visible={crimeTypeModalVisible}
+        animationType="fade"
+        onRequestClose={() => setCrimeTypeModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={[styles.modalTitle, { marginBottom: 10 }]}>Select Offense</Text>
+            <ScrollView style={{ maxHeight: 300 }}>
+              <TouchableOpacity
+                style={{ paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: '#eee' }}
+                onPress={() => handleCrimeTypeSelect('')}
+              >
+                <Text style={{ fontSize: 16, color: '#1F2937' }}>All Offenses</Text>
+              </TouchableOpacity>
+              {crimeTypes.map((c, idx) => (
+                <TouchableOpacity
+                  key={c || `crimeType-${idx}`}
+                  style={{ paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: '#eee' }}
+                  onPress={() => handleCrimeTypeSelect(c)}
+                >
+                  <Text style={{ fontSize: 16, color: '#1F2937' }}>{c}</Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+            <TouchableOpacity style={styles.modalButton} onPress={() => setCrimeTypeModalVisible(false)}>
+              <Text style={styles.modalButtonText}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Status Modal */}
+      <Modal
+        transparent={true}
+        visible={statusModalVisible}
+        animationType="fade"
+        onRequestClose={() => setStatusModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={[styles.modalTitle, { marginBottom: 10 }]}>Select Status</Text>
+            <ScrollView style={{ maxHeight: 300 }}>
+              <TouchableOpacity
+                style={{ paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: '#eee' }}
+                onPress={() => handleStatusSelect('')}
+              >
+                <Text style={{ fontSize: 16, color: '#1F2937' }}>All Statuses</Text>
+              </TouchableOpacity>
+              {statuses.map((s, idx) => (
+                <TouchableOpacity
+                  key={s || `status-${idx}`}
+                  style={{ paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: '#eee' }}
+                  onPress={() => handleStatusSelect(s)}
+                >
+                  <Text style={{ fontSize: 16, color: '#1F2937' }}>{s}</Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+            <TouchableOpacity style={styles.modalButton} onPress={() => setStatusModalVisible(false)}>
+              <Text style={styles.modalButtonText}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
 
       {/* Map */}
       <MapView
@@ -279,13 +675,13 @@ export default function CrimeMapScreen() {
         minZoomLevel={13}
         maxZoomLevel={18}
       >
-        {/* Only colored pins for crime records */}
-        {/* Pins for individual crime records */}
         {filteredData.map((marker) => {
           let pinColor = 'gray';
           if ((marker.risk_level || '').toLowerCase() === 'high') pinColor = 'red';
           else if ((marker.risk_level || '').toLowerCase() === 'medium') pinColor = 'orange';
           else if ((marker.risk_level || '').toLowerCase() === 'low') pinColor = 'green';
+          else if ((marker.risk_level || '').toLowerCase() === 'unknown') pinColor = '#6c757d';
+          else pinColor = 'gray';
 
           return (
             <Marker
@@ -303,7 +699,7 @@ export default function CrimeMapScreen() {
         })}
       </MapView>
 
-      {/* Modal */}
+      {/* Marker Details Modal */}
       <Modal
         animationType="slide"
         transparent={true}
@@ -314,12 +710,10 @@ export default function CrimeMapScreen() {
           <View style={styles.modalContent}>
             {selectedMarker && (
               <ScrollView>
-                {/* Offense Title Only */}
                 <View style={styles.modalIconRow}>
                   <Text style={styles.modalOffenseTitle}>{selectedMarker.offense || 'Offense'}</Text>
                 </View>
 
-                {/* Highlighted Details */}
                 <View style={styles.modalHighlightRow}>
                   <View style={[styles.modalHighlightBox, {backgroundColor: '#ffe5e5'}]}>
                     <Text style={styles.modalHighlightLabel}>Status</Text>
@@ -343,18 +737,16 @@ export default function CrimeMapScreen() {
                   </Text>
                 </View>
 
-                {/* Other Details */}
                 <Text style={styles.modalSectionTitle}>Details</Text>
                 <Text style={styles.modalDetail}><Text style={styles.modalDetailLabel}>Type of Place:</Text> {selectedMarker.type_of_place}</Text>
-                <Text style={styles.modalDetail}><Text style={styles.modalDetailLabel}>Date Reported:</Text> {selectedMarker.date_time_reported}</Text>
-                <Text style={styles.modalDetail}><Text style={styles.modalDetailLabel}>Date Committed:</Text> {selectedMarker.date_time_committed}</Text>
+                <Text style={styles.modalDetail}><Text style={styles.modalDetailLabel}>Date Reported:</Text> {formatDateTime(selectedMarker.date_time_reported)}</Text>
+                <Text style={styles.modalDetail}><Text style={styles.modalDetailLabel}>Date Committed:</Text> {formatDateTime(selectedMarker.date_time_committed)}</Text>
                 <Text style={styles.modalDetail}><Text style={styles.modalDetailLabel}>Type of Crime:</Text> {selectedMarker.type_of_crime}</Text>
                 <Text style={styles.modalDetail}><Text style={styles.modalDetailLabel}>Classification:</Text> {selectedMarker.classification_of_crime}</Text>
                 <Text style={styles.modalDetail}><Text style={styles.modalDetailLabel}>Victim:</Text> {selectedMarker.victim}</Text>
                 <Text style={styles.modalDetail}><Text style={styles.modalDetailLabel}>Suspect:</Text> {selectedMarker.suspect}</Text>
                 <Text style={styles.modalDetail}><Text style={styles.modalDetailLabel}>Narrative:</Text> {selectedMarker.narrative}</Text>
                 <Text style={styles.modalDetail}><Text style={styles.modalDetailLabel}>Batch Number:</Text> {selectedMarker.batch_number}</Text>
-                {/* Location now combined above with Barangay */}
                 <Text style={styles.modalDetail}><Text style={styles.modalDetailLabel}>Coordinates:</Text> {selectedMarker.latitude}, {selectedMarker.longitude}</Text>
               </ScrollView>
             )}
@@ -369,25 +761,65 @@ export default function CrimeMapScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#f5f5f5' },
   header: { fontSize: 20, fontWeight: 'bold', textAlign: 'center', marginTop: 10 },
-  searchContainer: { padding: 10, flexDirection: 'row', alignItems: 'center' },
-  searchInput: { flex: 1, borderWidth: 1, borderColor: '#ccc', padding: 10, borderRadius: 8 },
+  searchContainer: { 
+    padding: 10, 
+    flexDirection: 'row', 
+    alignItems: 'center',
+    backgroundColor: '#fff',
+    borderBottomWidth: 1,
+    borderBottomColor: '#eee'
+  },
+  searchInput: { 
+    flex: 1, 
+    borderWidth: 1, 
+    borderColor: '#ccc', 
+    padding: 10, 
+    borderRadius: 8,
+    color: '#333',
+    backgroundColor: '#fff'
+  },
   iconButton: {
     marginLeft: 10,
-    backgroundColor: '#007AFF',
-    padding: 10,
-    borderRadius: 5,
+    backgroundColor: '#28a745',
+    padding: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
   },
-  iconButtonText: {
-    color: 'white',
+  excelIcon: {
     fontSize: 18,
-    fontWeight: 'bold',
+    color: '#fff'
+  },
+  pdfButton: {
+    marginLeft: 10,
+    backgroundColor: '#dc3545',
+    padding: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+  },
+  pdfIcon: {
+    fontSize: 18,
+    color: '#fff'
   },
   filterRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     paddingHorizontal: 10,
-    marginBottom: 10,
-    zIndex: 10,
+    paddingBottom: 10,
+    backgroundColor: '#fff',
+    borderBottomWidth: 1,
+    borderBottomColor: '#eee'
   },
   dropdownContainer: {
     flex: 1,
@@ -396,6 +828,19 @@ const styles = StyleSheet.create({
   dropdownLabel: {
     fontWeight: '600',
     marginBottom: 4,
+    color: "#666",
+    fontSize: 12
+  },
+  filterButton: {
+    borderWidth: 1,
+    borderColor: '#ccc',
+    borderRadius: 8,
+    padding: 10,
+    backgroundColor: '#fff'
+  },
+  filterButtonText: {
+    color: '#333',
+    fontSize: 14
   },
   map: { flex: 1 },
   modalOverlay: {
@@ -421,10 +866,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 10,
     justifyContent: 'center',
-  },
-  modalOffenseIcon: {
-    fontSize: 36,
-    marginRight: 10,
   },
   modalOffenseTitle: {
     fontSize: 22,
@@ -470,4 +911,15 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: '#222',
   },
-})
+  modalButton: {
+    marginTop: 15,
+    padding: 10,
+    backgroundColor: '#f0f0f0',
+    borderRadius: 8,
+    alignItems: 'center'
+  },
+  modalButtonText: {
+    color: '#333',
+    fontWeight: '600'
+  }
+});
