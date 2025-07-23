@@ -1,674 +1,811 @@
 import React, { useState, useEffect } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  TouchableOpacity,
-  ScrollView,
-  Modal,
-  TextInput,
-  ActivityIndicator,
-  Dimensions,
-  StatusBar,
-  KeyboardAvoidingView,
-  Platform,
-} from 'react-native';
-import { MaterialIcons } from '@expo/vector-icons';
-import { Picker } from '@react-native-picker/picker';
-import Navbar from '../../components/Navbar';
+import { View, Text, TextInput, TouchableOpacity, ScrollView, Alert, Modal, ActivityIndicator, StyleSheet, Dimensions, Switch } from 'react-native';
 import userService from '../../services/usersService';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import Navbar from '../../components/Navbar';
 
-const { width } = Dimensions.get('window');
+const { width: screenWidth } = Dimensions.get('window');
 
-const getLoggedInUsername = async () => {
-  try {
-    const username = await AsyncStorage.getItem('username');
-    return username;
-  } catch (e) {
-    return null;
-  }
-};
-
-export default function ViewProfileScreen() {
-  const [user, setUser] = useState(null);
-  const [modalVisible, setModalVisible] = useState(false);
-  const [editForm, setEditForm] = useState({});
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState('');
-  const [showPassword, setShowPassword] = useState(false);
-  const [usernameError, setUsernameError] = useState('');
-  const [checkingUsername, setCheckingUsername] = useState(false);
+// Custom Dropdown Component
+const CustomDropdown = ({ 
+  selectedValue, 
+  onValueChange, 
+  items, 
+  placeholder = "Select an option", 
+  style,
+  disabled = false 
+}) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const [selectedLabel, setSelectedLabel] = useState('');
 
   useEffect(() => {
-    const fetchUser = async () => {
-      setLoading(true);
-      setError('');
-      const username = await getLoggedInUsername();
-      const res = await userService.getUserByUsername(username);
-      if (res && res.data) {
-        setUser(res.data);
-        setEditForm(res.data);
-      } else {
-        setError(res?.error || 'User not found');
-      }
-      setLoading(false);
-    };
-    fetchUser();
+    const selected = items.find(item => item.value === selectedValue);
+    setSelectedLabel(selected ? selected.label : placeholder);
+  }, [selectedValue, items, placeholder]);
+
+  const handleSelect = (value, label) => {
+    onValueChange(value);
+    setSelectedLabel(label);
+    setIsOpen(false);
+  };
+
+  return (
+    <View style={[styles.dropdownContainer, style]}>
+      <TouchableOpacity
+        style={[styles.dropdownButton, disabled && styles.dropdownDisabled]}
+        onPress={() => !disabled && setIsOpen(!isOpen)}
+        disabled={disabled}
+      >
+        <Text style={[
+          styles.dropdownButtonText,
+          selectedValue === '' && styles.dropdownPlaceholder
+        ]}>
+          {selectedLabel}
+        </Text>
+        <Text style={styles.dropdownArrow}>
+          {isOpen ? '▲' : '▼'}
+        </Text>
+      </TouchableOpacity>
+      
+      {isOpen && (
+        <View style={styles.dropdownList}>
+          {items.map((item, index) => (
+            <TouchableOpacity
+              key={index}
+              style={[
+                styles.dropdownItem,
+                selectedValue === item.value && styles.dropdownItemSelected
+              ]}
+              onPress={() => handleSelect(item.value, item.label)}
+            >
+              <Text style={[
+                styles.dropdownItemText,
+                selectedValue === item.value && styles.dropdownItemTextSelected
+              ]}>
+                {item.label}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+      )}
+    </View>
+  );
+};
+
+export default function CreateAccountScreen() {
+  const [form, setForm] = useState({
+    name: '',
+    role: '',
+    email: '',
+    username: '',
+    password: '',
+    confirmPassword: '',
+  });
+
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+  const [users, setUsers] = useState([]);
+  const [passwordVisible, setPasswordVisible] = useState(false);
+  const [confirmVisible, setConfirmVisible] = useState(false);
+  const [modalVisible, setModalVisible] = useState(false);
+  const [editIndex, setEditIndex] = useState(null);
+  const [editForm, setEditForm] = useState({});
+
+  // Username validation states
+  const [usernameValidation, setUsernameValidation] = useState({
+    isChecking: false,
+    isValid: null,
+    message: ''
+  });
+
+  const [editUsernameValidation, setEditUsernameValidation] = useState({
+    isChecking: false,
+    isValid: null,
+    message: ''
+  });
+
+  // Search functionality
+  const [searchQuery, setSearchQuery] = useState('');
+  const [filteredUsers, setFilteredUsers] = useState([]);
+
+  // Role options for dropdown
+  const roleOptions = [
+    { label: 'Select Role', value: '' },
+    { label: 'Admin', value: 'admin' },
+    { label: 'Invest', value: 'invest' }
+  ];
+
+  useEffect(() => {
+    fetchUsers();
   }, []);
 
-  const handleUpdateProfile = async () => {
-    // Check if username is available before saving
-    if (editForm.username !== user.username) {
-      const isUsernameAvailable = await checkUsernameAvailability(editForm.username);
-      if (!isUsernameAvailable) {
+  // Filter users based on search query
+  useEffect(() => {
+    if (!searchQuery.trim()) {
+      setFilteredUsers(users);
+    } else {
+      const filtered = users.filter(user => {
+        const query = searchQuery.toLowerCase();
+        return (
+          user.name.toLowerCase().includes(query) ||
+          user.username.toLowerCase().includes(query) ||
+          user.email.toLowerCase().includes(query) ||
+          user.role.toLowerCase().includes(query) ||
+          user.status.toLowerCase().includes(query)
+        );
+      });
+      setFilteredUsers(filtered);
+    }
+  }, [users, searchQuery]);
+
+  const fetchUsers = async () => {
+    setLoading(true);
+    const response = await userService.getUsers();
+    setLoading(false);
+    if (response.error) {
+      setError(response.error);
+    } else {
+      setUsers(response.data);
+      setFilteredUsers(response.data);
+    }
+  };
+
+  // Live username validation for create form
+  const validateUsername = async (username, isEdit = false) => {
+    if (!username || username.length < 3) {
+      const validation = {
+        isChecking: false,
+        isValid: username.length === 0 ? null : false,
+        message: username.length === 0 ? '' : 'Username must be at least 3 characters long'
+      };
+      
+      if (isEdit) {
+        setEditUsernameValidation(validation);
+      } else {
+        setUsernameValidation(validation);
+      }
+      return;
+    }
+
+    const validation = {
+      isChecking: true,
+      isValid: null,
+      message: 'Checking username availability...'
+    };
+    
+    if (isEdit) {
+      setEditUsernameValidation(validation);
+    } else {
+      setUsernameValidation(validation);
+    }
+
+    // Simulate API delay for better UX
+    await new Promise(resolve => setTimeout(resolve, 500));
+
+    // Check if username exists (case-insensitive)
+    const isDuplicate = users.some(user => {
+      // For edit mode, exclude the current user being edited
+      if (isEdit && editIndex !== null && user.$id === users[editIndex].$id) {
+        return false;
+      }
+      return user.username.toLowerCase() === username.toLowerCase();
+    });
+
+    const finalValidation = {
+      isChecking: false,
+      isValid: !isDuplicate,
+      message: isDuplicate ? 'Username already exists' : 'Username is available'
+    };
+
+    if (isEdit) {
+      setEditUsernameValidation(finalValidation);
+    } else {
+      setUsernameValidation(finalValidation);
+    }
+  };
+
+  // Debounced username validation
+  useEffect(() => {
+    const timeoutId = setTimeout(() => {
+      if (form.username) {
+        validateUsername(form.username, false);
+      }
+    }, 800);
+
+    return () => clearTimeout(timeoutId);
+  }, [form.username, users]);
+
+  // Debounced username validation for edit form
+  useEffect(() => {
+    const timeoutId = setTimeout(() => {
+      if (editForm.username) {
+        validateUsername(editForm.username, true);
+      }
+    }, 800);
+
+    return () => clearTimeout(timeoutId);
+  }, [editForm.username, users, editIndex]);
+
+  const isValidEmail = (email) => /\S+@\S+\.\S+/.test(email);
+
+  // Add user with enhanced validation
+  const handleCreateAccount = async () => {
+    if (!form.name || !form.role || !form.email || !form.username || !form.password || !form.confirmPassword) {
+      Alert.alert('Validation', 'Please fill all fields.');
+      return;
+    }
+    if (!isValidEmail(form.email)) {
+      Alert.alert('Validation', 'Invalid email address.');
+      return;
+    }
+
+    // Check username validation status
+    if (usernameValidation.isChecking) {
+      Alert.alert('Validation', 'Please wait while we check username availability.');
+      return;
+    }
+
+    if (!usernameValidation.isValid) {
+      Alert.alert('Validation', 'Please choose a different username.');
+      return;
+    }
+
+    if (form.password !== form.confirmPassword) {
+      Alert.alert('Validation', 'Passwords do not match.');
+      return;
+    }
+
+    Alert.alert(
+      'Confirm',
+      'Are you sure you want to create this account?',
+      [
+        {
+          text: 'Cancel',
+          style: 'cancel',
+        },
+        {
+          text: 'Create',
+          onPress: async () => {
+            setLoading(true);
+            const response = await userService.addUser({
+              name: form.name,
+              role: form.role,
+              email: form.email,
+              username: form.username,
+              password: form.password,
+              status: 'Active',
+            });
+            setLoading(false);
+            if (response.error) {
+              Alert.alert('Error', response.error);
+              return;
+            }
+            Alert.alert('Success', 'Account created successfully!');
+            fetchUsers();
+            setForm({ name: '', role: '', email: '', username: '', password: '', confirmPassword: '' });
+            setUsernameValidation({ isChecking: false, isValid: null, message: '' });
+          },
+        },
+      ]
+    );
+  };
+
+  const openEditModal = (index) => {
+    setEditIndex(index);
+    setEditForm({
+      ...users[index],
+    });
+    setModalVisible(true);
+    // Reset edit username validation
+    setEditUsernameValidation({ isChecking: false, isValid: null, message: '' });
+  };
+
+  // Update user with enhanced validation
+  const handleUpdateUser = async () => {
+    if (!editForm.name || !editForm.role || !editForm.email) {
+      Alert.alert('Validation', 'Please fill all fields.');
+      return;
+    }
+
+    // Check username validation status if username was changed
+    if (editForm.username && editForm.username !== users[editIndex].username) {
+      if (editUsernameValidation.isChecking) {
+        Alert.alert('Validation', 'Please wait while we check username availability.');
+        return;
+      }
+
+      if (!editUsernameValidation.isValid) {
+        Alert.alert('Validation', 'Please choose a different username.');
         return;
       }
     }
 
-    setSaving(true);
-    setError('');
-    // Remove system fields and empty values before updating
-    const { $id, $databaseId, $collectionId, $createdAt, $updatedAt, ...dataToUpdate } = editForm;
-    
-    // Remove empty or whitespace-only values
-    const cleanedData = Object.entries(dataToUpdate).reduce((acc, [key, value]) => {
-      if (value && typeof value === 'string' && value.trim() !== '') {
-        acc[key] = value.trim();
-      } else if (value && typeof value !== 'string') {
-        acc[key] = value;
-      }
-      return acc;
-    }, {});
-    
-    const res = await userService.updateUser(user.$id, cleanedData);
-    if (!res.error) {
-      setUser(res.data);
-      setModalVisible(false);
-      setUsernameError('');
-    } else {
-      setError(res.error || 'Failed to update profile');
-    }
-    setSaving(false);
+    Alert.alert(
+      'Confirm',
+      'Are you sure you want to update this account?',
+      [
+        {
+          text: 'Cancel',
+          style: 'cancel',
+        },
+        {
+          text: 'Update',
+          onPress: async () => {
+            setLoading(true);
+            const response = await userService.updateUser(editForm.$id, {
+              name: editForm.name,
+              role: editForm.role,
+              email: editForm.email,
+              username: editForm.username,
+              status: editForm.status,
+            });
+            setLoading(false);
+            if (response.error) {
+              Alert.alert('Error', response.error);
+              return;
+            }
+            Alert.alert('Success', 'Account updated successfully!');
+            setModalVisible(false);
+            fetchUsers();
+            setEditUsernameValidation({ isChecking: false, isValid: null, message: '' });
+          },
+        },
+      ]
+    );
   };
 
-  const InfoRow = ({ label, value, icon }) => (
-    <View style={styles.infoRow}>
-      <View style={styles.infoLeft}>
-        {icon && <MaterialIcons name={icon} size={20} color="#6B7280" style={styles.infoIcon} />}
-        <Text style={styles.infoLabel}>{label}</Text>
+  // Delete user
+  const handleDeleteUser = async (userId) => {
+    Alert.alert('Confirm', 'Are you sure you want to delete this user?', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Delete', 
+        style: 'destructive', 
+        onPress: async () => {
+          setLoading(true);
+          const response = await userService.deleteUser(userId);
+          setLoading(false);
+          if (response.error) {
+            Alert.alert('Error', response.error);
+            return;
+          }
+          Alert.alert('Success', 'User deleted successfully!');
+          fetchUsers();
+        }
+      }
+    ]);
+  };
+
+  // Toggle user status
+  const handleToggleStatus = async (user) => {
+    const newStatus = user.status === 'Active' ? 'Inactive' : 'Active';
+    const action = newStatus === 'Active' ? 'activate' : 'deactivate';
+    
+    Alert.alert(
+      'Confirm',
+      `Are you sure you want to ${action} this account?`,
+      [
+        {
+          text: 'Cancel',
+          style: 'cancel',
+          onPress: () => {
+            // Revert the switch UI since user canceled
+            fetchUsers();
+          },
+        },
+        {
+          text: action.charAt(0).toUpperCase() + action.slice(1),
+          onPress: async () => {
+            setLoading(true);
+            const response = await userService.updateUser(user.$id, { status: newStatus });
+            setLoading(false);
+            if (response.error) {
+              Alert.alert('Error', response.error);
+              return;
+            }
+            Alert.alert('Success', `Account ${action}d successfully!`);
+            fetchUsers();
+          },
+        },
+      ]
+    );
+  };
+
+  // Clear search function
+  const handleClearSearch = () => {
+    setSearchQuery('');
+  };
+
+  // Username validation indicator component
+  const UsernameValidationIndicator = ({ validation }) => {
+    if (!validation.message) return null;
+
+    return (
+      <View style={styles.validationContainer}>
+        {validation.isChecking && <ActivityIndicator size="small" color="#007bff" />}
+        <Text style={[
+          styles.validationText,
+          { color: validation.isValid === true ? '#28a745' : validation.isValid === false ? '#dc3545' : '#6c757d' }
+        ]}>
+          {validation.message}
+        </Text>
       </View>
-      <Text style={styles.infoValue}>{value || 'Not set'}</Text>
-    </View>
+    );
+  };
+
+  // Responsive Table
+  const ResponsiveTable = ({ data }) => (
+    <ScrollView horizontal style={styles.tableScrollView}>
+      <View style={styles.tableContainer}>
+        <View style={styles.tableHeader}>
+          <Text style={[styles.headerCell, styles.nameColumn]}>Name</Text>
+          <Text style={[styles.headerCell, styles.usernameColumn]}>Username</Text>
+          <Text style={[styles.headerCell, styles.emailColumn]}>Email</Text>
+          <Text style={[styles.headerCell, styles.roleColumn]}>Role</Text>
+          <Text style={[styles.headerCell, styles.statusColumn]}>Status</Text>
+          <Text style={[styles.headerCell, styles.actionsColumn]}>Actions</Text>
+        </View>
+        {data.map((item, idx) => (
+          <View key={item.$id} style={styles.tableRow}>
+            <Text style={[styles.cell, styles.nameColumn]}>{item.name}</Text>
+            <Text style={[styles.cell, styles.usernameColumn]}>{item.username}</Text>
+            <Text style={[styles.cell, styles.emailColumn]}>{item.email}</Text>
+            <Text style={[styles.cell, styles.roleColumn]}>{item.role}</Text>
+            <View style={[styles.cell, styles.statusColumn]}>
+              <View style={[styles.statusBadge, { backgroundColor: item.status === 'Active' ? '#28a745' : '#dc3545' }]}>
+                <Text style={styles.statusText}>{item.status}</Text>
+              </View>
+            </View>
+            <View style={[styles.cell, styles.actionsColumn]}>
+              <TouchableOpacity style={styles.updateButton} onPress={() => openEditModal(idx)}>
+                <Text style={styles.buttonText}>Edit</Text>
+              </TouchableOpacity>
+              <Switch
+                value={item.status === 'Active'}
+                onValueChange={() => handleToggleStatus(item)}
+                thumbColor={item.status === 'Active' ? '#28a745' : '#dc3545'}
+                trackColor={{ false: '#ccc', true: '#28a745' }}
+              />
+              <TouchableOpacity style={styles.deactivateButton} onPress={() => handleDeleteUser(item.$id)}>
+                <Text style={styles.buttonText}>Delete</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        ))}
+      </View>
+    </ScrollView>
   );
-
-  const capitalizeFirstLetter = (str) => {
-    if (!str) return '';
-    return str.charAt(0).toUpperCase() + str.slice(1).toLowerCase();
-  };
-
-  const checkUsernameAvailability = async (username) => {
-    if (!username || username === user.username) {
-      setUsernameError('');
-      return true;
-    }
-
-    setCheckingUsername(true);
-    try {
-      // Add a small delay to prevent excessive API calls while typing
-      await new Promise(resolve => setTimeout(resolve, 500));
-      
-      const res = await userService.getUserByUsername(username);
-      if (res && res.data) {
-        setUsernameError('Username is already taken');
-        return false;
-      } else {
-        setUsernameError('');
-        return true;
-      }
-    } catch (error) {
-      // If user not found, username is available
-      setUsernameError('');
-      return true;
-    } finally {
-      setCheckingUsername(false);
-    }
-  };
-
-  const handleUsernameChange = (text) => {
-    setEditForm({ ...editForm, username: text });
-    if (text && text !== user.username) {
-      checkUsernameAvailability(text);
-    } else {
-      setUsernameError('');
-    }
-  };
-
-  if (loading) {
-    return (
-      <View style={styles.loadingContainer}>
-        <StatusBar barStyle="dark-content" backgroundColor="#F9FAFB" />
-        <ActivityIndicator size="large" color="#002D72" />
-        <Text style={styles.loadingText}>Loading profile...</Text>
-      </View>
-    );
-  }
-
-  if (error) {
-    return (
-      <View style={styles.errorContainer}>
-        <StatusBar barStyle="dark-content" backgroundColor="#F9FAFB" />
-        <MaterialIcons name="error-outline" size={48} color="#EF4444" />
-        <Text style={styles.errorText}>{error}</Text>
-      </View>
-    );
-  }
 
   return (
     <View style={styles.container}>
-      <StatusBar barStyle="dark-content" backgroundColor="#F9FAFB" />
       <Navbar />
-      
-      <ScrollView 
-        style={styles.scrollView}
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={styles.scrollContent}
-      >
-        {/* Header */}
-        <View style={styles.header}>
-          <Text style={styles.pageTitle}>My Profile</Text>
-          <View style={styles.avatarContainer}>
-            <View style={styles.avatar}>
-              <Text style={styles.avatarText}>
-                {user.name ? user.name.charAt(0).toUpperCase() : 'U'}
-              </Text>
-            </View>
-          </View>
-          <Text style={styles.userName}>{user.name || 'Unknown User'}</Text>
-          <Text style={styles.userRole}>{capitalizeFirstLetter(user.role)}</Text>
-        </View>
-
-        {/* Profile Information Card */}
-        <View style={styles.card}>
-          <View style={styles.cardHeader}>
-            <Text style={styles.cardTitle}>Profile Information</Text>
-            <TouchableOpacity
-              style={styles.editIconButton}
-              onPress={() => {
-                setEditForm(user);
-                setModalVisible(true);
+      <ScrollView>
+        <Text style={styles.sectionTitle}>Create Account</Text>
+        <View style={styles.form}>
+          <TextInput
+            style={styles.input}
+            placeholder="Name"
+            value={form.name}
+            onChangeText={text => setForm({ ...form, name: text })}
+          />
+          
+          <CustomDropdown
+            selectedValue={form.role}
+            onValueChange={value => setForm({ ...form, role: value })}
+            items={roleOptions}
+            placeholder="Select Role"
+            style={styles.dropdownMargin}
+          />
+          
+          <TextInput
+            style={styles.input}
+            placeholder="Email"
+            value={form.email}
+            onChangeText={text => setForm({ ...form, email: text })}
+            keyboardType="email-address"
+            autoCapitalize="none"
+          />
+          <View>
+            <TextInput
+              style={[
+                styles.input,
+                { 
+                  borderColor: usernameValidation.isValid === false ? '#dc3545' : 
+                              usernameValidation.isValid === true ? '#28a745' : '#ccc'
+                }
+              ]}
+              placeholder="Username"
+              value={form.username}
+              onChangeText={text => {
+                setForm({ ...form, username: text });
+                if (!text) {
+                  setUsernameValidation({ isChecking: false, isValid: null, message: '' });
+                }
               }}
-            >
-              <MaterialIcons name="edit" size={20} color="#6B7280" />
+              autoCapitalize="none"
+            />
+            <UsernameValidationIndicator validation={usernameValidation} />
+          </View>
+          <View style={styles.passwordContainer}>
+            <TextInput
+              style={styles.passwordInput}
+              placeholder="Password"
+              value={form.password}
+              onChangeText={text => setForm({ ...form, password: text })}
+              secureTextEntry={!passwordVisible}
+            />
+            <TouchableOpacity onPress={() => setPasswordVisible(!passwordVisible)}>
+              <Text>{passwordVisible ? 'Hide' : 'Show'}</Text>
             </TouchableOpacity>
           </View>
-
-          <View style={styles.infoContainer}>
-            <InfoRow label="Full Name" value={user.name} icon="person" />
-            <InfoRow label="Email Address" value={user.email} icon="email" />
-            <InfoRow label="Username" value={user.username} icon="account-circle" />
-            <InfoRow label="Role" value={capitalizeFirstLetter(user.role)} icon="work" />
+          <View style={styles.passwordContainer}>
+            <TextInput
+              style={styles.passwordInput}
+              placeholder="Confirm Password"
+              value={form.confirmPassword}
+              onChangeText={text => setForm({ ...form, confirmPassword: text })}
+              secureTextEntry={!confirmVisible}
+            />
+            <TouchableOpacity onPress={() => setConfirmVisible(!confirmVisible)}>
+              <Text>{confirmVisible ? 'Hide' : 'Show'}</Text>
+            </TouchableOpacity>
           </View>
-
-          <TouchableOpacity
-            style={styles.editButton}
-            onPress={() => {
-              setEditForm(user);
-              setModalVisible(true);
-            }}
-          >
-            <MaterialIcons name="edit" size={18} color="white" />
-            <Text style={styles.editButtonText}>Edit Profile</Text>
+          <TouchableOpacity style={styles.submitButton} onPress={handleCreateAccount} disabled={loading}>
+            {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.submitButtonText}>Create Account</Text>}
           </TouchableOpacity>
+        </View>
+
+        <Text style={styles.sectionTitle}>Users</Text>
+        <View style={styles.usersSection}>
+          {/* Search Bar */}
+          <View style={styles.searchContainer}>
+            <TextInput
+              style={styles.searchInput}
+              placeholder="Search users by name, username, email, role, or status..."
+              value={searchQuery}
+              onChangeText={setSearchQuery}
+              autoCapitalize="none"
+            />
+            {searchQuery ? (
+              <TouchableOpacity style={styles.clearButton} onPress={handleClearSearch}>
+                <Text style={styles.clearButtonText}>Clear</Text>
+              </TouchableOpacity>
+            ) : null}
+          </View>
+          
+          {/* Search Results Info */}
+          {searchQuery && (
+            <View style={styles.searchResults}>
+              <Text style={styles.searchResultsText}>
+                Found {filteredUsers.length} user{filteredUsers.length !== 1 ? 's' : ''} 
+                {searchQuery && ` matching "${searchQuery}"`}
+              </Text>
+            </View>
+          )}
+          
+          {loading ? <ActivityIndicator /> : <ResponsiveTable data={filteredUsers} />}
         </View>
       </ScrollView>
 
-      {/* Fixed Modal with explicit boolean props */}
-      <Modal 
-        visible={modalVisible} 
-        transparent={true}
-        animationType="slide"
-        statusBarTranslucent={true}
-      >
-        <KeyboardAvoidingView 
-          style={styles.modalOverlay}
-          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        >
+      {/* Edit Modal */}
+      <Modal visible={modalVisible} transparent animationType="slide">
+        <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Edit Profile</Text>
-              <TouchableOpacity
-                onPress={() => {
-                  setModalVisible(false);
-                  setUsernameError('');
-                  setError('');
-                }}
-                style={styles.closeButton}
-              >
-                <MaterialIcons name="close" size={24} color="#6B7280" />
-              </TouchableOpacity>
-            </View>
-
-            <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
-              <View style={styles.formGroup}>
-                <Text style={styles.inputLabel}>Full Name</Text>
-                <TextInput
-                  style={styles.input}
-                  placeholder="Enter your full name"
-                  value={editForm.name || ''}
-                  onChangeText={(text) => setEditForm({ ...editForm, name: text })}
-                  placeholderTextColor="#9CA3AF"
-                />
-              </View>
-
-              <View style={styles.formGroup}>
-                <Text style={styles.inputLabel}>Email Address</Text>
-                <TextInput
-                  style={styles.input}
-                  placeholder="Enter your email"
-                  value={editForm.email || ''}
-                  onChangeText={(text) => setEditForm({ ...editForm, email: text })}
-                  keyboardType="email-address"
-                  autoCapitalize="none"
-                  placeholderTextColor="#9CA3AF"
-                />
-              </View>
-
-              <View style={styles.formGroup}>
-                <Text style={styles.inputLabel}>Username</Text>
-                <View style={styles.usernameContainer}>
-                  <TextInput
-                    style={[styles.input, usernameError ? styles.inputError : null]}
-                    placeholder="Enter your username"
-                    value={editForm.username || ''}
-                    onChangeText={handleUsernameChange}
-                    autoCapitalize="none"
-                    placeholderTextColor="#9CA3AF"
-                  />
-                  {checkingUsername && (
-                    <View style={styles.usernameLoader}>
-                      <ActivityIndicator size="small" color="#3B82F6" />
-                    </View>
-                  )}
-                </View>
-                {usernameError ? (
-                  <View style={styles.fieldError}>
-                    <MaterialIcons name="error" size={14} color="#EF4444" />
-                    <Text style={styles.fieldErrorText}>{usernameError}</Text>
-                  </View>
-                ) : null}
-              </View>
-
-              <View style={styles.formGroup}>
-                <Text style={styles.inputLabel}>New Password</Text>
-                <View style={styles.passwordContainer}>
-                  <TextInput
-                    style={styles.passwordInput}
-                    placeholder="Enter new password (optional)"
-                    value={editForm.password || ''}
-                    onChangeText={(text) => setEditForm({ ...editForm, password: text })}
-                    secureTextEntry={!showPassword}
-                    placeholderTextColor="#9CA3AF"
-                  />
-                  <TouchableOpacity
-                    style={styles.passwordToggle}
-                    onPress={() => setShowPassword(!showPassword)}
-                  >
-                    <MaterialIcons
-                      name={showPassword ? 'visibility' : 'visibility-off'}
-                      size={20}
-                      color="#9CA3AF"
-                    />
-                  </TouchableOpacity>
-                </View>
-              </View>
+            <ScrollView>
+              <Text style={styles.sectionTitle}>Edit User</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="Name"
+                value={editForm.name || ''}
+                onChangeText={text => setEditForm({ ...editForm, name: text })}
+              />
               
-              {error ? (
-                <View style={styles.errorBanner}>
-                  <MaterialIcons name="error" size={16} color="#EF4444" />
-                  <Text style={styles.errorBannerText}>{error}</Text>
-                </View>
-              ) : null}
-            </ScrollView>
-
-            <View style={styles.modalActions}>
-              <TouchableOpacity 
-                style={styles.cancelButton}
-                onPress={() => {
-                  setModalVisible(false);
-                  setUsernameError('');
-                  setError('');
-                }}
-              >
+              <CustomDropdown
+                selectedValue={editForm.role || ''}
+                onValueChange={value => setEditForm({ ...editForm, role: value })}
+                items={roleOptions}
+                placeholder="Select Role"
+                style={styles.dropdownMargin}
+              />
+              
+              <TextInput
+                style={styles.input}
+                placeholder="Email"
+                value={editForm.email || ''}
+                onChangeText={text => setEditForm({ ...editForm, email: text })}
+                keyboardType="email-address"
+                autoCapitalize="none"
+              />
+              <View>
+                <TextInput
+                  style={[
+                    styles.input,
+                    { 
+                      borderColor: editUsernameValidation.isValid === false ? '#dc3545' : 
+                                  editUsernameValidation.isValid === true ? '#28a745' : '#ccc'
+                    }
+                  ]}
+                  placeholder="Username"
+                  value={editForm.username || ''}
+                  onChangeText={text => {
+                    setEditForm({ ...editForm, username: text });
+                    if (!text) {
+                      setEditUsernameValidation({ isChecking: false, isValid: null, message: '' });
+                    }
+                  }}
+                  autoCapitalize="none"
+                />
+                <UsernameValidationIndicator validation={editUsernameValidation} />
+              </View>
+              <TouchableOpacity style={styles.submitButton} onPress={handleUpdateUser} disabled={loading}>
+                {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.submitButtonText}>Update User</Text>}
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.cancelButton} onPress={() => setModalVisible(false)}>
                 <Text style={styles.cancelButtonText}>Cancel</Text>
               </TouchableOpacity>
-              
-              <TouchableOpacity 
-                style={[
-                  styles.saveButton, 
-                  (saving || !!usernameError || checkingUsername) && styles.saveButtonDisabled
-                ]} 
-                onPress={handleUpdateProfile} 
-                disabled={saving || !!usernameError || checkingUsername}
-              >
-                {saving ? (
-                  <ActivityIndicator size="small" color="white" />
-                ) : (
-                  <>
-                    <MaterialIcons name="check" size={18} color="white" />
-                    <Text style={styles.saveButtonText}>Save Changes</Text>
-                  </>
-                )}
-              </TouchableOpacity>
-            </View>
+            </ScrollView>
           </View>
-        </KeyboardAvoidingView>
+        </View>
       </Modal>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#F9FAFB',
+  container: { flex: 1, backgroundColor: '#eaf0f6' },
+  sectionTitle: { fontSize: 18, fontWeight: 'bold', margin: 10, color: '#002D72' },
+  form: { padding: 16, backgroundColor: '#fff', marginBottom: 10 },
+  input: { borderWidth: 1, borderColor: '#ccc', marginVertical: 6, padding: 10, borderRadius: 4 },
+  passwordContainer: { flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: '#ccc', borderRadius: 4, paddingHorizontal: 10, marginVertical: 6 },
+  passwordInput: { flex: 1, paddingVertical: 10 },
+  submitButton: { backgroundColor: '#002D72', padding: 12, borderRadius: 4, marginTop: 16 },
+  submitButtonText: { color: 'white', fontWeight: 'bold', textAlign: 'center' },
+  usersSection: { padding: 16, backgroundColor: '#fff' },
+  tableScrollView: { flex: 1 },
+  tableContainer: { flex: 1 },
+  tableHeader: { flexDirection: 'row', backgroundColor: '#dee2e6', paddingVertical: 12, borderTopWidth: 1, borderBottomWidth: 1, borderColor: '#bbb' },
+  headerCell: { fontWeight: 'bold', textAlign: 'center', fontSize: 14, color: '#002D72' },
+  tableRow: { flexDirection: 'row', backgroundColor: '#fff', borderBottomWidth: 1, borderColor: '#e0e0e0', paddingVertical: 12, minHeight: 60 },
+  cell: { textAlign: 'center', fontSize: 12, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 4 },
+  nameColumn: { width: 150 },
+  usernameColumn: { width: 120 },
+  emailColumn: { width: 180 },
+  roleColumn: { width: 100 },
+  statusColumn: { width: 100 },
+  actionsColumn: { width: 180, flexDirection: 'row', gap: 8, justifyContent: 'center' },
+  statusBadge: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 12, alignSelf: 'center' },
+  statusText: { color: 'white', fontSize: 12, fontWeight: 'bold' },
+  updateButton: { backgroundColor: '#002D72', paddingHorizontal: 8, paddingVertical: 6, borderRadius: 4, flexDirection: 'row', alignItems: 'center', gap: 4 },
+  deactivateButton: { backgroundColor: '#dc3545', paddingHorizontal: 8, paddingVertical: 6, borderRadius: 4, flexDirection: 'row', alignItems: 'center', gap: 4 },
+  buttonText: { color: 'white', fontSize: 12, fontWeight: 'bold' },
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', padding: 20 },
+  modalContent: { backgroundColor: 'white', padding: 20, borderRadius: 10, maxHeight: '80%' },
+  cancelButton: { marginTop: 10, alignSelf: 'center', padding: 10 },
+  cancelButtonText: { color: 'red', fontWeight: 'bold' },
+  validationContainer: { 
+    flexDirection: 'row', 
+    alignItems: 'center', 
+    marginTop: 4, 
+    marginBottom: 6,
+    paddingHorizontal: 4
   },
-  scrollView: {
-    flex: 1,
+  validationText: { 
+    fontSize: 12, 
+    marginLeft: 8,
+    fontWeight: '500'
   },
-  scrollContent: {
-    paddingBottom: 20,
-  },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
+  // Search styles
+  searchContainer: {
+    flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#F9FAFB',
-  },
-  loadingText: {
-    marginTop: 12,
-    fontSize: 16,
-    color: '#6B7280',
-  },
-  errorContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#F9FAFB',
-    padding: 20,
-  },
-  errorText: {
-    marginTop: 12,
-    fontSize: 16,
-    color: '#EF4444',
-    textAlign: 'center',
-  },
-  
-  // Header Styles
-  header: {
-    alignItems: 'center',
-    paddingTop: 20,
-    paddingBottom: 24,
-    paddingHorizontal: 20,
-  },
-  pageTitle: {
-    fontSize: 28,
-    fontWeight: '800',
-    color: '#1F2937',
-    marginBottom: 20,
-    alignSelf: 'flex-start',
-  },
-  avatarContainer: {
     marginBottom: 16,
+    backgroundColor: '#f8f9fa',
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
   },
-  avatar: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    backgroundColor: '#002D72',
-    justifyContent: 'center',
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 4,
-  },
-  avatarText: {
-    fontSize: 28,
-    fontWeight: '700',
-    color: 'white',
-  },
-  userName: {
-    fontSize: 24,
-    fontWeight: '700',
-    color: '#1F2937',
-    marginBottom: 4,
-  },
-  userRole: {
-    fontSize: 16,
-    color: '#6B7280',
-    marginBottom: 12,
-  },
-  statusText: {
+  searchInput: {
+    flex: 1,
+    paddingVertical: 10,
+    paddingHorizontal: 8,
     fontSize: 14,
-    fontWeight: '600',
-    color: 'white',
+    backgroundColor: '#fff',
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#dee2e6',
   },
-
-  // Card Styles
-  card: {
-    backgroundColor: 'white',
-    marginHorizontal: 20,
-    borderRadius: 16,
-    padding: 20,
+  clearButton: {
+    marginLeft: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    backgroundColor: '#6c757d',
+    borderRadius: 6,
+  },
+  clearButtonText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: 'bold',
+  },
+  searchResults: {
+    marginBottom: 12,
+    paddingHorizontal: 4,
+  },
+  searchResultsText: {
+    fontSize: 14,
+    color: '#6c757d',
+    fontStyle: 'italic',
+  },
+  // Custom Dropdown Styles
+  dropdownContainer: {
+    position: 'relative',
+    zIndex: 1000,
+  },
+  dropdownMargin: {
+    marginVertical: 6,
+  },
+  dropdownButton: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#ccc',
+    borderRadius: 4,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    backgroundColor: '#fff',
+    minHeight: 48,
+  },
+  dropdownDisabled: {
+    backgroundColor: '#f5f5f5',
+    opacity: 0.7,
+  },
+  dropdownButtonText: {
+    fontSize: 16,
+    color: '#333',
+    flex: 1,
+  },
+  dropdownPlaceholder: {
+    color: '#999',
+  },
+  dropdownArrow: {
+    fontSize: 12,
+    color: '#666',
+    marginLeft: 10,
+  },
+  dropdownList: {
+    position: 'absolute',
+    top: '100%',
+    left: 0,
+    right: 0,
+    backgroundColor: '#fff',
+    borderWidth: 1,
+    borderColor: '#ccc',
+    borderTopWidth: 0,
+    borderRadius: 4,
+    borderTopLeftRadius: 0,
+    borderTopRightRadius: 0,
+    maxHeight: 200,
+    zIndex: 1001,
+    elevation: 5,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.08,
-    shadowRadius: 12,
-    elevation: 3,
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
   },
-  cardHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 20,
+  dropdownItem: {
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#eee',
   },
-  cardTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#1F2937',
+  dropdownItemSelected: {
+    backgroundColor: '#f0f8ff',
   },
-  editIconButton: {
-    padding: 8,
-    borderRadius: 8,
-    backgroundColor: '#F3F4F6',
-  },
-  infoContainer: {
-    gap: 16,
-    marginBottom: 24,
-  },
-  infoRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: 2,
-  },
-  infoLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flex: 1,
-  },
-  infoIcon: {
-    marginRight: 12,
-  },
-  infoLabel: {
-    fontSize: 15,
-    color: '#6B7280',
-    fontWeight: '500',
-  },
-  infoValue: {
-    fontSize: 15,
-    color: '#1F2937',
-    fontWeight: '600',
-    flex: 1,
-    textAlign: 'right',
-  },
-  editButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#002D72',
-    paddingVertical: 14,
-    borderRadius: 12,
-    gap: 8,
-  },
-  editButtonText: {
-    color: 'white',
+  dropdownItemText: {
     fontSize: 16,
-    fontWeight: '600',
+    color: '#333',
   },
-
-  // Modal Styles
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    justifyContent: 'flex-end',
-  },
-  modalContent: {
-    backgroundColor: 'white',
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    paddingTop: 20,
-    paddingHorizontal: 20,
-    paddingBottom: 20,
-    maxHeight: '85%',
-  },
-  modalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 24,
-  },
-  modalTitle: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: '#1F2937',
-  },
-  closeButton: {
-    padding: 4,
-  },
-  formGroup: {
-    marginBottom: 20,
-  },
-  inputLabel: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#374151',
-    marginBottom: 8,
-  },
-  input: {
-    borderWidth: 1,
-    borderColor: '#D1D5DB',
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    fontSize: 16,
-    color: '#1F2937',
-    backgroundColor: '#FAFAFA',
-  },
-  inputError: {
-    borderColor: '#EF4444',
-    backgroundColor: '#FEF2F2',
-  },
-  usernameContainer: {
-    position: 'relative',
-  },
-  usernameLoader: {
-    position: 'absolute',
-    right: 16,
-    top: 17,
-  },
-  fieldError: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: 6,
-    gap: 4,
-  },
-  fieldErrorText: {
-    fontSize: 12,
-    color: '#EF4444',
-  },
-  passwordContainer: {
-    position: 'relative',
-  },
-  passwordInput: {
-    borderWidth: 1,
-    borderColor: '#D1D5DB',
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    paddingRight: 50,
-    fontSize: 16,
-    color: '#1F2937',
-    backgroundColor: '#FAFAFA',
-  },
-  passwordToggle: {
-    position: 'absolute',
-    right: 16,
-    top: 17,
-  },
-  errorBanner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#FEF2F2',
-    padding: 12,
-    borderRadius: 8,
-    marginBottom: 16,
-    gap: 8,
-  },
-  errorBannerText: {
-    flex: 1,
-    color: '#EF4444',
-    fontSize: 14,
-  },
-  modalActions: {
-    flexDirection: 'row',
-    gap: 12,
-    paddingTop: 20,
-    borderTopWidth: 1,
-    borderTopColor: '#F3F4F6',
-  },
-  cancelButton: {
-    flex: 1,
-    paddingVertical: 14,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#D1D5DB',
-    alignItems: 'center',
-  },
-  cancelButtonText: {
-    color: '#6B7280',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  saveButton: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#10B981',
-    paddingVertical: 14,
-    borderRadius: 12,
-    gap: 6,
-  },
-  saveButtonDisabled: {
-    backgroundColor: '#9CA3AF',
-  },
-  saveButtonText: {
-    color: 'white',
-    fontSize: 16,
-    fontWeight: '600',
+  dropdownItemTextSelected: {
+    color: '#002D72',
+    fontWeight: '600', 
   },
 });

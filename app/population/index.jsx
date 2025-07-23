@@ -1,8 +1,8 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { View, Text, TouchableOpacity, TextInput, FlatList, Modal, Alert, StyleSheet, ScrollView } from 'react-native';
 import { useRouter } from 'expo-router';
-import databaseServices from '../../services/databaseServices';
+import { useEffect, useMemo, useState } from 'react';
+import { Alert, FlatList, Modal, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import Navbar from '../../components/Navbar';
+import databaseServices from '../../services/databaseServices';
 
 export default function PopulationScreen() {
   const router = useRouter();
@@ -217,6 +217,7 @@ export default function PopulationScreen() {
                             const updated = await databaseServices.listBarangays();
                             setBarangays(updated);
                             setEditingBarangay(null);
+                            Alert.alert('Success', 'Population updated successfully!');
                           } else {
                             Alert.alert('Error', res.error);
                           }

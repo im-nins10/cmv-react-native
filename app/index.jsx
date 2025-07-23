@@ -1,25 +1,25 @@
-import React, { useState, useRef, useEffect } from 'react';
+import { MaterialIcons } from '@expo/vector-icons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { BlurView } from 'expo-blur';
+import { useRouter } from 'expo-router';
+import React, { useEffect, useRef, useState } from 'react';
 import {
+  Alert,
+  Dimensions,
+  Image,
+  Keyboard,
+  KeyboardAvoidingView,
+  Modal,
+  Platform,
   SafeAreaView,
-  View,
+  ScrollView,
+  StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
-  StyleSheet,
-  Image,
-  Alert,
-  Dimensions,
-  ScrollView,
-  Modal,
-  Platform,
-  Keyboard,
-  KeyboardAvoidingView,
+  View,
 } from 'react-native';
-import { MaterialIcons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
 import authService from '../services/authService';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import { BlurView } from 'expo-blur';
 
 const { height, width } = Dimensions.get('window');
 
@@ -59,15 +59,16 @@ export default function LoginScreen() {
 
     // Dismiss keyboard before login
     Keyboard.dismiss();
-    
+
     setIsLoading(true);
     try {
       const response = await authService.login(username, password);
       if (response.error) {
         Alert.alert('Login Failed', response.error);
       } else {
+        // Store user info and role in AsyncStorage for later use (e.g., admin-only features)
         await AsyncStorage.setItem('username', username);
-        await AsyncStorage.setItem('role', response.user.role || '');
+        await AsyncStorage.setItem('role', response.user.role || ''); // <-- ROLE STORED HERE
         await AsyncStorage.setItem('fullName', response.user.name || '');
         router.push('/landing');
       }
