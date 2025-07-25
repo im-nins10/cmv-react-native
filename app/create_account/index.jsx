@@ -254,23 +254,39 @@ export default function CreateAccountScreen() {
       return;
     }
 
-    setLoading(true);
-    const response = await userService.addUser({
-      name: form.name,
-      role: form.role,
-      email: form.email,
-      username: form.username,
-      password: form.password,
-      status: 'Active',
-    });
-    setLoading(false);
-    if (response.error) {
-      Alert.alert('Error', response.error);
-      return;
-    }
-    fetchUsers();
-    setForm({ name: '', role: '', email: '', username: '', password: '', confirmPassword: '' });
-    setUsernameValidation({ isChecking: false, isValid: null, message: '' });
+    Alert.alert(
+      'Confirm',
+      'Are you sure you want to create this account?',
+      [
+        {
+          text: 'Cancel',
+          style: 'cancel',
+        },
+        {
+          text: 'Create',
+          onPress: async () => {
+            setLoading(true);
+            const response = await userService.addUser({
+              name: form.name,
+              role: form.role,
+              email: form.email,
+              username: form.username,
+              password: form.password,
+              status: 'Active',
+            });
+            setLoading(false);
+            if (response.error) {
+              Alert.alert('Error', response.error);
+              return;
+            }
+            Alert.alert('Success', 'Account created successfully!');
+            fetchUsers();
+            setForm({ name: '', role: '', email: '', username: '', password: '', confirmPassword: '' });
+            setUsernameValidation({ isChecking: false, isValid: null, message: '' });
+          },
+        },
+      ]
+    );
   };
 
   const openEditModal = (index) => {
@@ -303,22 +319,38 @@ export default function CreateAccountScreen() {
       }
     }
 
-    setLoading(true);
-    const response = await userService.updateUser(editForm.$id, {
-      name: editForm.name,
-      role: editForm.role,
-      email: editForm.email,
-      username: editForm.username,
-      status: editForm.status,
-    });
-    setLoading(false);
-    if (response.error) {
-      Alert.alert('Error', response.error);
-      return;
-    }
-    setModalVisible(false);
-    fetchUsers();
-    setEditUsernameValidation({ isChecking: false, isValid: null, message: '' });
+    Alert.alert(
+      'Confirm',
+      'Are you sure you want to update this account?',
+      [
+        {
+          text: 'Cancel',
+          style: 'cancel',
+        },
+        {
+          text: 'Update',
+          onPress: async () => {
+            setLoading(true);
+            const response = await userService.updateUser(editForm.$id, {
+              name: editForm.name,
+              role: editForm.role,
+              email: editForm.email,
+              username: editForm.username,
+              status: editForm.status,
+            });
+            setLoading(false);
+            if (response.error) {
+              Alert.alert('Error', response.error);
+              return;
+            }
+            Alert.alert('Success', 'Account updated successfully!');
+            setModalVisible(false);
+            fetchUsers();
+            setEditUsernameValidation({ isChecking: false, isValid: null, message: '' });
+          },
+        },
+      ]
+    );
   };
 
   // Delete user
@@ -326,7 +358,9 @@ export default function CreateAccountScreen() {
     Alert.alert('Confirm', 'Are you sure you want to delete this user?', [
       { text: 'Cancel', style: 'cancel' },
       {
-        text: 'Delete', style: 'destructive', onPress: async () => {
+        text: 'Delete', 
+        style: 'destructive', 
+        onPress: async () => {
           setLoading(true);
           const response = await userService.deleteUser(userId);
           setLoading(false);
@@ -334,6 +368,7 @@ export default function CreateAccountScreen() {
             Alert.alert('Error', response.error);
             return;
           }
+          Alert.alert('Success', 'User deleted successfully!');
           fetchUsers();
         }
       }
@@ -342,15 +377,37 @@ export default function CreateAccountScreen() {
 
   // Toggle user status
   const handleToggleStatus = async (user) => {
-    setLoading(true);
     const newStatus = user.status === 'Active' ? 'Inactive' : 'Active';
-    const response = await userService.updateUser(user.$id, { status: newStatus });
-    setLoading(false);
-    if (response.error) {
-      Alert.alert('Error', response.error);
-      return;
-    }
-    fetchUsers();
+    const action = newStatus === 'Active' ? 'activate' : 'deactivate';
+    
+    Alert.alert(
+      'Confirm',
+      `Are you sure you want to ${action} this account?`,
+      [
+        {
+          text: 'Cancel',
+          style: 'cancel',
+          onPress: () => {
+            // Revert the switch UI since user canceled
+            fetchUsers();
+          },
+        },
+        {
+          text: action.charAt(0).toUpperCase() + action.slice(1),
+          onPress: async () => {
+            setLoading(true);
+            const response = await userService.updateUser(user.$id, { status: newStatus });
+            setLoading(false);
+            if (response.error) {
+              Alert.alert('Error', response.error);
+              return;
+            }
+            Alert.alert('Success', `Account ${action}d successfully!`);
+            fetchUsers();
+          },
+        },
+      ]
+    );
   };
 
   // Clear search function
