@@ -44,7 +44,7 @@ export default function Navbar() {
     { label: 'Population', icon: 'group', route: '/population' },
     { label: 'Audit Logs', icon: 'history', route: '/audit_logs' },
     { label: 'My Profile', icon: 'person', route: '/profile' },
-    { label: 'Create Account', icon: 'person-add', route: '/create_account' },
+    { label: 'User Management', icon: 'person-add', route: '/create_account' },
     { label: 'Logout', icon: 'logout', route: 'logout' },
   ];
 
